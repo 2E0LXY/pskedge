@@ -34,11 +34,28 @@ bool AudioEngine::startRx()
         return false;
     }
 
-    const QAudioFormat format = pskAudioFormat();
-    if (!input.isFormatSupported(format)) {
-        emit statusChanged("RX audio: default input does not support 8 kHz mono PCM");
+    // Most consumer audio interfaces do not natively support 8 kHz capture;
+    // requesting it directly and refusing to start if unsupported meant RX
+    // silently failed to start on the majority of real hardware. Request
+    // mono 16-bit at the device's preferred rate instead, and drive the
+    // demodulator's sample rate from whatever we actually got.
+    QAudioFormat format = input.preferredFormat();
+    format.setSampleFormat(QAudioFormat::Int16);
+    QAudioFormat monoFormat = format;
+    monoFormat.setChannelCount(1);
+    if (input.isFormatSupported(monoFormat)) {
+        format = monoFormat;
+    } else if (!input.isFormatSupported(format)) {
+        emit statusChanged("RX audio: no supported 16-bit format on default input");
         return false;
     }
+    // If only the multi-channel preferred format is supported, keep it and
+    // downmix to mono ourselves in readRxAudio() rather than failing to start.
+
+    m_rxSampleRate = format.sampleRate();
+    m_rxChannelCount = std::max(1, format.channelCount());
+    m_rxSamples.clear();
+    m_rxLastDecoded.clear();
 
     m_source = new QAudioSource(input, format, this);
     m_rxDevice = m_source->start();
@@ -49,8 +66,18 @@ bool AudioEngine::startRx()
     }
 
     connect(m_rxDevice, &QIODevice::readyRead, this, &AudioEngine::readRxAudio);
-    emit statusChanged("RX audio: listening");
+    emit statusChanged(QString("RX audio: listening at %1 Hz").arg(m_rxSampleRate, 0, 'f', 0));
     return true;
+}
+
+void AudioEngine::setRxTargetHz(double audioHz)
+{
+    m_rxTargetHz = audioHz;
+    // Changing the tracked audio offset invalidates the in-flight
+    // demodulator state (oscillator phase relative to buffer start), so
+    // start clean rather than mixing bits demodulated at two frequencies.
+    m_rxSamples.clear();
+    m_rxLastDecoded.clear();
 }
 
 void AudioEngine::stopRx()
@@ -73,11 +100,17 @@ bool AudioEngine::transmitBpsk31(const QString &text, double audioHz)
         return false;
     }
 
-    const QAudioFormat format = pskAudioFormat();
-    if (!output.isFormatSupported(format)) {
-        emit statusChanged("TX audio: default output does not support 8 kHz mono PCM");
+    QAudioFormat format = output.preferredFormat();
+    format.setSampleFormat(QAudioFormat::Int16);
+    QAudioFormat monoFormat = format;
+    monoFormat.setChannelCount(1);
+    if (output.isFormatSupported(monoFormat)) {
+        format = monoFormat;
+    } else if (!output.isFormatSupported(format)) {
+        emit statusChanged("TX audio: no supported 16-bit format on default output");
         return false;
     }
+
 
     psk::dsp::Bpsk31Config config;
     config.sampleRate = format.sampleRate();
@@ -88,7 +121,7 @@ bool AudioEngine::transmitBpsk31(const QString &text, double audioHz)
     const std::vector<double> samples = codec.modulateText(text.toStdString());
 
     m_txBuffer = new QBuffer(this);
-    m_txBuffer->setData(pcm16FromSamples(samples));
+    m_txBuffer->setData(pcm16FromSamples(samples, format.channelCount()));
     if (!m_txBuffer->open(QIODevice::ReadOnly)) {
         emit statusChanged("TX audio: failed to open sample buffer");
         stopTx();
@@ -129,18 +162,58 @@ void AudioEngine::readRxAudio()
     }
 
     const auto *samples = reinterpret_cast<const qint16 *>(data.constData());
-    const int sampleCount = data.size() / static_cast<int>(sizeof(qint16));
+    const int rawCount = data.size() / static_cast<int>(sizeof(qint16));
+    const int channels = std::max(1, m_rxChannelCount);
+    const int frameCount = rawCount / channels;
     double sumSquares = 0.0;
     double peak = 0.0;
 
-    for (int i = 0; i < sampleCount; ++i) {
-        const double value = static_cast<double>(samples[i]) / 32768.0;
+    m_rxSamples.reserve(m_rxSamples.size() + static_cast<std::size_t>(frameCount));
+    for (int frame = 0; frame < frameCount; ++frame) {
+        double frameSum = 0.0;
+        for (int ch = 0; ch < channels; ++ch) {
+            frameSum += static_cast<double>(samples[frame * channels + ch]) / 32768.0;
+        }
+        const double value = frameSum / channels;
         sumSquares += value * value;
         peak = std::max(peak, std::abs(value));
+        m_rxSamples.push_back(value);
     }
 
-    const double rms = std::sqrt(sumSquares / std::max(1, sampleCount));
+    const double rms = std::sqrt(sumSquares / std::max(1, frameCount));
     emit rxLevelChanged(rms, peak);
+    if (m_rxSamples.size() > kMaxRxSamples) {
+        // Trim from the front. This resets demodulator continuity at the
+        // trim point (see header comment on kMaxRxSamples) but bounds
+        // memory/CPU for an unattended long-running session.
+        m_rxSamples.erase(m_rxSamples.begin(),
+                           m_rxSamples.begin() + static_cast<long>(m_rxSamples.size() - kMaxRxSamples / 2));
+        m_rxLastDecoded.clear();
+    }
+
+    runRxDemodulator();
+}
+
+void AudioEngine::runRxDemodulator()
+{
+    psk::dsp::Bpsk31Config config;
+    config.sampleRate = m_rxSampleRate;
+    config.carrierHz = m_rxTargetHz;
+
+    // NOTE: this demodulator has no carrier PLL and no symbol-timing
+    // recovery (see Bpsk31Codec). It integrate-and-dumps against a fixed
+    // NCO locked to m_rxTargetHz from the start of the retained buffer, so
+    // it will only lock onto a real off-air signal that happens to sit
+    // very close to that offset with negligible clock drift. This is
+    // enough to prove the RX path is live rather than fabricated, but is
+    // not yet a robust receiver - see IMPROVEMENTS.md.
+    const psk::dsp::Bpsk31Codec codec(config);
+    const std::string decoded = codec.demodulateText(m_rxSamples);
+
+    if (decoded != m_rxLastDecoded) {
+        m_rxLastDecoded = decoded;
+        emit rxTextDecoded(QString::fromStdString(decoded));
+    }
 }
 
 void AudioEngine::handleSinkStateChanged()
@@ -156,24 +229,19 @@ void AudioEngine::handleSinkStateChanged()
     }
 }
 
-QAudioFormat AudioEngine::pskAudioFormat() const
+QByteArray AudioEngine::pcm16FromSamples(const std::vector<double> &samples, int channelCount) const
 {
-    QAudioFormat format;
-    format.setSampleRate(8000);
-    format.setChannelCount(1);
-    format.setSampleFormat(QAudioFormat::Int16);
-    return format;
-}
-
-QByteArray AudioEngine::pcm16FromSamples(const std::vector<double> &samples) const
-{
+    channelCount = std::max(1, channelCount);
     QByteArray bytes;
-    bytes.resize(static_cast<qsizetype>(samples.size() * sizeof(qint16)));
+    bytes.resize(static_cast<qsizetype>(samples.size() * static_cast<std::size_t>(channelCount) * sizeof(qint16)));
     auto *out = reinterpret_cast<qint16 *>(bytes.data());
 
     for (std::size_t i = 0; i < samples.size(); ++i) {
         const double clamped = std::clamp(samples[i], -1.0, 1.0);
-        out[i] = static_cast<qint16>(std::lrint(clamped * std::numeric_limits<qint16>::max()));
+        const auto value = static_cast<qint16>(std::lrint(clamped * std::numeric_limits<qint16>::max()));
+        for (int ch = 0; ch < channelCount; ++ch) {
+            out[i * static_cast<std::size_t>(channelCount) + static_cast<std::size_t>(ch)] = value;
+        }
     }
 
     return bytes;

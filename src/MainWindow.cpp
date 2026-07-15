@@ -46,8 +46,14 @@ MainWindow::MainWindow(QWidget *parent)
     m_audioEngine = new AudioEngine(this);
     connect(m_audioEngine, &AudioEngine::statusChanged, this, &MainWindow::handleAudioStatus);
     connect(m_audioEngine, &AudioEngine::rxLevelChanged, this, &MainWindow::handleRxLevel);
+    connect(m_audioEngine, &AudioEngine::rxTextDecoded, this, &MainWindow::handleRxTextDecoded);
     connect(m_audioEngine, &AudioEngine::txStarted, this, &MainWindow::handleTxStarted);
     connect(m_audioEngine, &AudioEngine::txFinished, this, &MainWindow::handleTxFinished);
+    m_liveRxLine.channel = 1;
+    m_liveRxLine.mode = "BPSK31";
+    m_liveRxLine.state = "Searching";
+    m_liveRxLine.metrics.audioFrequencyHz = 1000.0;
+    m_liveRxLine.metrics.rfFrequencyMhz = 14.070000 + m_liveRxLine.metrics.audioFrequencyHz / 1000000.0;
 
     auto *central = new QWidget(this);
     auto *mainLayout = new QVBoxLayout(central);
@@ -83,7 +89,6 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(&m_decoder, &MockDecoder::decoded, this, &MainWindow::addDecodedLine);
     connect(m_txText, &QPlainTextEdit::textChanged, this, &MainWindow::updateTxSafety);
-    m_decoder.start();
     m_audioEngine->startRx();
     updateStatusLabels();
     updateTxSafety();
@@ -101,6 +106,10 @@ QWidget *MainWindow::buildTopBar()
     m_catLabel = new QLabel("CAT Offline", this);
     m_audioLabel = new QLabel("Audio: starting", this);
     m_rxLevelLabel = new QLabel("RX level: --", this);
+    m_simulateCheck = new QCheckBox("Simulate (demo data)", this);
+    m_simulateCheck->setChecked(false);
+    m_simulateCheck->setObjectName("simulateToggle");
+    connect(m_simulateCheck, &QCheckBox::toggled, this, &MainWindow::toggleSimulateMode);
     m_vfoLabel = new QLabel("14.070.000 MHz", this);
     m_vfoLabel->setObjectName("vfo");
     auto *mode = new QLabel("Mode: BPSK31   BW: 60 Hz   RX   TX/RX Locked", this);
@@ -109,6 +118,7 @@ QWidget *MainWindow::buildTopBar()
     layout->addWidget(m_catLabel);
     layout->addWidget(m_audioLabel);
     layout->addWidget(m_rxLevelLabel);
+    layout->addWidget(m_simulateCheck);
     layout->addStretch();
     layout->addWidget(m_vfoLabel);
     layout->addStretch();
@@ -291,8 +301,12 @@ void MainWindow::handleWaterfallClick(double audioHz)
 {
     m_selectedLine.metrics.audioFrequencyHz = audioHz;
     m_selectedLine.metrics.rfFrequencyMhz = 14.070000 + audioHz / 1000000.0;
+    m_liveRxLine.metrics.audioFrequencyHz = audioHz;
+    m_liveRxLine.metrics.rfFrequencyMhz = m_selectedLine.metrics.rfFrequencyMhz;
+    m_liveRxLine.state = "Searching";
+    m_audioEngine->setRxTargetHz(audioHz);
     updateTxSafety();
-    statusBar()->showMessage(QString("Selected RX audio frequency %1 Hz").arg(audioHz, 0, 'f', 0), 3000);
+    statusBar()->showMessage(QString("RX tracking audio frequency %1 Hz").arg(audioHz, 0, 'f', 0), 3000);
 }
 
 void MainWindow::openSettings()
@@ -373,6 +387,30 @@ void MainWindow::handleTxStarted()
 void MainWindow::handleTxFinished()
 {
     updateTxSafety();
+}
+
+void MainWindow::handleRxTextDecoded(const QString &text)
+{
+    m_liveRxLine.text = text;
+    m_liveRxLine.state = text.isEmpty() ? "Searching" : "Locked";
+    m_liveRxLine.metrics.lockQuality = m_liveRxLine.state;
+    m_liveRxLine.callsign = extractCallsign(text, m_liveRxLine.callsign);
+    m_activeModel->addOrUpdate(m_liveRxLine);
+}
+
+void MainWindow::toggleSimulateMode(bool enabled)
+{
+    if (enabled) {
+        m_decoder.start();
+        statusBar()->showMessage("Simulate mode ON: demo data is fabricated, not received", 4000);
+    } else {
+        m_decoder.stop();
+        // Demo lines must not linger and be mistaken for real decoded
+        // traffic once simulate mode is switched off.
+        m_activeModel->clear();
+        m_sweeperModel->clear();
+        statusBar()->showMessage("Simulate mode OFF: showing live RX only", 3000);
+    }
 }
 
 QString MainWindow::extractCallsign(const QString &text, const QString &fallback) const

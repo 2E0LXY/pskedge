@@ -11,6 +11,7 @@ class MockDecoder : public QObject {
 public:
     explicit MockDecoder(QObject *parent = nullptr);
     void start();
+    void stop();
 
 signals:
     void decoded(const DecodeLine &line);

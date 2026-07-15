@@ -50,8 +50,10 @@ void WaterfallWidget::resizeEvent(QResizeEvent *)
     }
     QImage newImage(size(), QImage::Format_RGB32);
     newImage.fill(QColor(4, 8, 18));
-    QPainter painter(&newImage);
-    painter.drawImage(0, 0, m_image.scaled(size()));
+    if (!m_image.isNull()) {
+        QPainter painter(&newImage);
+        painter.drawImage(0, 0, m_image.scaled(size()));
+    }
     m_image = newImage;
 }
 

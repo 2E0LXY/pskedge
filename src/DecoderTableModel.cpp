@@ -83,6 +83,16 @@ DecodeLine DecoderTableModel::lineAt(int row) const
     return m_lines.at(row);
 }
 
+void DecoderTableModel::clear()
+{
+    if (m_lines.isEmpty()) {
+        return;
+    }
+    beginRemoveRows(QModelIndex(), 0, m_lines.size() - 1);
+    m_lines.clear();
+    endRemoveRows();
+}
+
 QString DecoderTableModel::columnText(const DecodeLine &line, int column) const
 {
     switch (column) {

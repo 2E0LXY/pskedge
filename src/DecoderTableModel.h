@@ -22,6 +22,7 @@ public:
     QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const override;
 
     void addOrUpdate(const DecodeLine &line);
+    void clear();
     DecodeLine lineAt(int row) const;
 
 private:

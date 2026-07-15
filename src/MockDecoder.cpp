@@ -14,6 +14,11 @@ void MockDecoder::start()
     m_timer.start();
 }
 
+void MockDecoder::stop()
+{
+    m_timer.stop();
+}
+
 void MockDecoder::emitLine()
 {
     static const QStringList calls = {"K7ABC", "W1AW", "G0ABC", "DL1XYZ", "M7TEST", "VE3HAM"};
