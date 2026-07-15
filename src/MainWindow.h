@@ -2,11 +2,9 @@
 
 #include "AppConfig.h"
 #include "DecoderTableModel.h"
-#include "MockDecoder.h"
 #include "SignalTypes.h"
 #include "audio/AudioEngine.h"
 
-#include <QCheckBox>
 #include <QLabel>
 #include <QMainWindow>
 #include <QPlainTextEdit>
@@ -22,7 +20,6 @@ public:
     explicit MainWindow(QWidget *parent = nullptr);
 
 private slots:
-    void addDecodedLine(const DecodeLine &line);
     void handleActiveDecodeClick(const QModelIndex &index);
     void handleSweeperClick(const QModelIndex &index);
     void handleWaterfallClick(double audioHz);
@@ -36,7 +33,6 @@ private slots:
     void handleTxFinished();
     void updateTxSafety();
     void handleRxTextDecoded(const QString &text);
-    void toggleSimulateMode(bool enabled);
 
 private:
     QString extractCallsign(const QString &text, const QString &fallback) const;
@@ -72,8 +68,6 @@ private:
     QLabel *m_rxLevelLabel = nullptr;
     QPushButton *m_sendButton = nullptr;
     QPushButton *m_abortButton = nullptr;
-    QCheckBox *m_simulateCheck = nullptr;
     AudioEngine *m_audioEngine = nullptr;
-    MockDecoder m_decoder;
     DecodeLine m_liveRxLine;
 };

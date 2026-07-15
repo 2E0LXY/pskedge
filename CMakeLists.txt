@@ -28,8 +28,6 @@ add_executable(psk-analyzer
     src/MacroEngine.h
     src/MainWindow.cpp
     src/MainWindow.h
-    src/MockDecoder.cpp
-    src/MockDecoder.h
     src/SettingsDialog.cpp
     src/SettingsDialog.h
     src/SignalTypes.h

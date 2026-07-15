@@ -96,7 +96,6 @@ MainWindow::MainWindow(QWidget *parent)
         QPushButton:disabled { color: #60717a; background: #101820; border-color: #1b2a35; }
     )");
 
-    connect(&m_decoder, &MockDecoder::decoded, this, &MainWindow::addDecodedLine);
     connect(m_txText, &QPlainTextEdit::textChanged, this, &MainWindow::updateTxSafety);
 
     m_catLabel = new QLabel("CAT Offline", this);
@@ -127,17 +126,12 @@ QWidget *MainWindow::buildTopBar()
     // not exist. Selecting a band here does not retune anything.
     band->setToolTip("Band reference only - no CAT backend is implemented yet");
 
-    m_simulateCheck = new QCheckBox("Simulate (demo data)", this);
-    m_simulateCheck->setChecked(false);
-    m_simulateCheck->setObjectName("simulateToggle");
-    connect(m_simulateCheck, &QCheckBox::toggled, this, &MainWindow::toggleSimulateMode);
     m_vfoLabel = new QLabel("14.070.000 MHz", this);
     m_vfoLabel->setObjectName("vfo");
     auto *mode = new QLabel("Mode: BPSK31   BW: 60 Hz   RX   TX/RX Locked", this);
 
     layout->addWidget(setup);
     layout->addWidget(band);
-    layout->addWidget(m_simulateCheck);
     layout->addStretch();
     layout->addWidget(m_vfoLabel);
     layout->addStretch();
@@ -162,6 +156,12 @@ QWidget *MainWindow::buildRightPanel()
 
     auto *sweeperBox = new QGroupBox("Band Sweeper Candidates", this);
     auto *sweeperLayout = new QVBoxLayout(sweeperBox);
+    auto *sweeperNote = new QLabel(
+        "Not yet implemented: no wideband candidate detector exists. "
+        "This is Active Decoders only until multi-signal scanning is built.", this);
+    sweeperNote->setWordWrap(true);
+    sweeperNote->setStyleSheet("color: #7a939e; font-weight: normal;");
+    sweeperLayout->addWidget(sweeperNote);
     m_sweeperView = new QTableView(this);
     m_sweeperView->setModel(m_sweeperModel);
     configureTable(m_sweeperView);
@@ -291,17 +291,6 @@ void MainWindow::configureTable(QTableView *view)
     view->setColumnWidth(4, 72);
     view->setColumnWidth(5, 54);
     view->setColumnWidth(6, 48);
-}
-
-void MainWindow::addDecodedLine(const DecodeLine &line)
-{
-    DecodeLine active = line;
-    active.metrics.lockQuality = line.metrics.qualityPercent > 78 ? "Locked" : "Marginal";
-    m_activeModel->addOrUpdate(active);
-
-    DecodeLine candidate = line;
-    candidate.metrics.lockQuality = line.text.contains("CQ", Qt::CaseInsensitive) ? "CQ" : "Candidate";
-    m_sweeperModel->addOrUpdate(candidate);
 }
 
 void MainWindow::handleActiveDecodeClick(const QModelIndex &index)
@@ -437,21 +426,6 @@ void MainWindow::handleRxTextDecoded(const QString &text)
     m_liveRxLine.metrics.lockQuality = m_liveRxLine.state;
     m_liveRxLine.callsign = extractCallsign(text, m_liveRxLine.callsign);
     m_activeModel->addOrUpdate(m_liveRxLine);
-}
-
-void MainWindow::toggleSimulateMode(bool enabled)
-{
-    if (enabled) {
-        m_decoder.start();
-        statusBar()->showMessage("Simulate mode ON: demo data is fabricated, not received", 4000);
-    } else {
-        m_decoder.stop();
-        // Demo lines must not linger and be mistaken for real decoded
-        // traffic once simulate mode is switched off.
-        m_activeModel->clear();
-        m_sweeperModel->clear();
-        statusBar()->showMessage("Simulate mode OFF: showing live RX only", 3000);
-    }
 }
 
 QString MainWindow::extractCallsign(const QString &text, const QString &fallback) const
