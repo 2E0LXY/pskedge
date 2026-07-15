@@ -5,8 +5,18 @@ project(PSKAnalyzer VERSION 0.01.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
+enable_testing()
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets)
+
+add_library(psk-core
+    src/dsp/Bpsk31Codec.cpp
+    src/dsp/Bpsk31Codec.h
+    src/dsp/PskVaricode.cpp
+    src/dsp/PskVaricode.h
+)
+
+target_include_directories(psk-core PUBLIC src)
 
 add_executable(psk-analyzer
     src/AppConfig.h
@@ -26,7 +36,15 @@ add_executable(psk-analyzer
     src/main.cpp
 )
 
-target_link_libraries(psk-analyzer PRIVATE Qt6::Widgets)
+target_link_libraries(psk-analyzer PRIVATE Qt6::Widgets psk-core)
+
+add_executable(psk-core-selftest
+    tools/psk_core_selftest.cpp
+)
+
+target_link_libraries(psk-core-selftest PRIVATE psk-core)
+
+add_test(NAME psk-core-selftest COMMAND psk-core-selftest)
 
 if(WIN32)
     set_target_properties(psk-analyzer PROPERTIES WIN32_EXECUTABLE ON)

@@ -4,6 +4,8 @@ Initial beta scaffold for a Windows and Debian PSK-family digital-mode program.
 
 The current build is a runnable Qt UI prototype with:
 
+- a real PSK31 Varicode encoder/decoder core;
+- a first offline BPSK31 TX/RX roundtrip path covered by CI;
 - right-to-left waterfall simulation;
 - 16-channel active decoder model;
 - separate SuperSweeper-style candidate monitor;
@@ -30,6 +32,7 @@ Debian example:
 sudo apt install build-essential cmake qt6-base-dev
 cmake -S . -B build
 cmake --build build
+ctest --test-dir build --output-on-failure
 ./build/psk-analyzer
 ```
 
@@ -38,6 +41,7 @@ Windows example from a Qt developer shell:
 ```bat
 cmake -S . -B build
 cmake --build build --config Release
+ctest --test-dir build --output-on-failure -C Release
 build\Release\psk-analyzer.exe
 ```
 
@@ -59,4 +63,4 @@ Build artifacts are uploaded as:
 
 ## Status
 
-Tag `v1.0.0-beta` is intended as the first UI and workflow baseline, not a finished decoder. Real audio DSP, Hamlib control, ADIF logging, PSK Reporter, and PSK128FEC modulation are next implementation steps.
+Tag `v0.01-beta` is the first packaged UI/workflow baseline. The current `master` branch has started the real radio core with Varicode and offline BPSK31 TX/RX roundtrip coverage. Live audio DSP, Hamlib control, ADIF logging, PSK Reporter, and PSK128FEC modulation are next implementation steps.

@@ -62,6 +62,10 @@ jobs:
         shell: bash
         run: ${{ matrix.build }}
 
+      - name: Test
+        shell: bash
+        run: ctest --test-dir build --output-on-failure -C Release
+
       - name: Package
         shell: bash
         run: ${{ matrix.package }}
