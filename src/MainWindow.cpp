@@ -26,6 +26,9 @@
 #include <QTextCursor>
 #include <QVBoxLayout>
 
+#include <algorithm>
+#include <cmath>
+
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
@@ -40,6 +43,11 @@ MainWindow::MainWindow(QWidget *parent)
 
     m_activeModel = new DecoderTableModel(DecoderTableModel::Mode::ActiveDecoders, this);
     m_sweeperModel = new DecoderTableModel(DecoderTableModel::Mode::SweeperCandidates, this);
+    m_audioEngine = new AudioEngine(this);
+    connect(m_audioEngine, &AudioEngine::statusChanged, this, &MainWindow::handleAudioStatus);
+    connect(m_audioEngine, &AudioEngine::rxLevelChanged, this, &MainWindow::handleRxLevel);
+    connect(m_audioEngine, &AudioEngine::txStarted, this, &MainWindow::handleTxStarted);
+    connect(m_audioEngine, &AudioEngine::txFinished, this, &MainWindow::handleTxFinished);
 
     auto *central = new QWidget(this);
     auto *mainLayout = new QVBoxLayout(central);
@@ -76,6 +84,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(&m_decoder, &MockDecoder::decoded, this, &MainWindow::addDecodedLine);
     connect(m_txText, &QPlainTextEdit::textChanged, this, &MainWindow::updateTxSafety);
     m_decoder.start();
+    m_audioEngine->startRx();
     updateStatusLabels();
     updateTxSafety();
 }
@@ -90,12 +99,16 @@ QWidget *MainWindow::buildTopBar()
     connect(setup, &QPushButton::clicked, this, &MainWindow::openSettings);
 
     m_catLabel = new QLabel("CAT Offline", this);
+    m_audioLabel = new QLabel("Audio: starting", this);
+    m_rxLevelLabel = new QLabel("RX level: --", this);
     m_vfoLabel = new QLabel("14.070.000 MHz", this);
     m_vfoLabel->setObjectName("vfo");
     auto *mode = new QLabel("Mode: BPSK31   BW: 60 Hz   RX   TX/RX Locked", this);
 
     layout->addWidget(setup);
     layout->addWidget(m_catLabel);
+    layout->addWidget(m_audioLabel);
+    layout->addWidget(m_rxLevelLabel);
     layout->addStretch();
     layout->addWidget(m_vfoLabel);
     layout->addStretch();
@@ -207,12 +220,14 @@ QWidget *MainWindow::buildTxPanel()
     }
 
     m_sendButton = new QPushButton("Send", this);
-    auto *abort = new QPushButton("Abort", this);
+    m_abortButton = new QPushButton("Abort", this);
     auto *clear = new QPushButton("Clear", this);
+    connect(m_sendButton, &QPushButton::clicked, this, &MainWindow::transmitComposer);
+    connect(m_abortButton, &QPushButton::clicked, this, &MainWindow::abortTransmit);
     connect(clear, &QPushButton::clicked, this, [this]() { m_txText->clear(); });
     macroRow->addStretch();
     macroRow->addWidget(m_sendButton);
-    macroRow->addWidget(abort);
+    macroRow->addWidget(m_abortButton);
     macroRow->addWidget(clear);
     layout->addLayout(macroRow);
 
@@ -295,6 +310,69 @@ void MainWindow::insertMacro(const QString &macroText)
 {
     const QString expanded = MacroEngine::expand(macroText, m_config, m_selectedLine);
     m_txText->insertPlainText(expanded);
+}
+
+void MainWindow::transmitComposer()
+{
+    const QString text = m_txText->toPlainText().trimmed();
+    if (text.isEmpty()) {
+        statusBar()->showMessage("TX blocked: composer is empty", 3000);
+        return;
+    }
+
+    const double audioHz = m_selectedLine.metrics.audioFrequencyHz > 0.0
+                               ? m_selectedLine.metrics.audioFrequencyHz
+                               : 1000.0;
+    if (m_audioEngine->transmitBpsk31(text, audioHz)) {
+        statusBar()->showMessage(QString("Transmitting BPSK31 at %1 Hz").arg(audioHz, 0, 'f', 0), 5000);
+    }
+}
+
+void MainWindow::abortTransmit()
+{
+    m_audioEngine->stopTx();
+    statusBar()->showMessage("Transmit aborted", 3000);
+}
+
+void MainWindow::handleAudioStatus(const QString &status)
+{
+    if (m_audioLabel) {
+        m_audioLabel->setText(status);
+    }
+}
+
+void MainWindow::handleRxLevel(double rms, double peak)
+{
+    if (!m_rxLevelLabel) {
+        return;
+    }
+
+    const double rmsDb = rms > 0.000001 ? 20.0 * std::log10(rms) : -120.0;
+    const int peakPercent = static_cast<int>(std::round(std::clamp(peak, 0.0, 1.0) * 100.0));
+    m_rxLevelLabel->setText(QString("RX level: %1 dBFS / %2%")
+                                .arg(rmsDb, 0, 'f', 1)
+                                .arg(peakPercent));
+}
+
+void MainWindow::handleTxStarted()
+{
+    if (m_sendButton) {
+        m_sendButton->setEnabled(false);
+    }
+    if (m_abortButton) {
+        m_abortButton->setEnabled(true);
+    }
+    if (m_txSafetyLabel) {
+        m_txSafetyLabel->setObjectName("txSafe");
+        m_txSafetyLabel->setText("TX Active: BPSK31 audio");
+        m_txSafetyLabel->style()->unpolish(m_txSafetyLabel);
+        m_txSafetyLabel->style()->polish(m_txSafetyLabel);
+    }
+}
+
+void MainWindow::handleTxFinished()
+{
+    updateTxSafety();
 }
 
 QString MainWindow::extractCallsign(const QString &text, const QString &fallback) const
@@ -388,6 +466,9 @@ void MainWindow::updateTxSafety()
 
     if (m_sendButton) {
         m_sendButton->setEnabled(canSend);
+    }
+    if (m_abortButton) {
+        m_abortButton->setEnabled(false);
     }
     if (!m_txSafetyLabel) {
         return;

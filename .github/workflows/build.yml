@@ -46,13 +46,14 @@ jobs:
         uses: jurplel/install-qt-action@v4
         with:
           version: "6.7.3"
+          modules: qtmultimedia
           cache: true
 
       - name: Install Linux build tools
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake dpkg-dev fakeroot ninja-build qt6-base-dev
+          sudo apt-get install -y build-essential cmake dpkg-dev fakeroot ninja-build qt6-base-dev qt6-multimedia-dev
 
       - name: Configure
         shell: bash

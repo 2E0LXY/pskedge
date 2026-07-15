@@ -4,6 +4,7 @@
 #include "DecoderTableModel.h"
 #include "MockDecoder.h"
 #include "SignalTypes.h"
+#include "audio/AudioEngine.h"
 
 #include <QLabel>
 #include <QMainWindow>
@@ -26,6 +27,12 @@ private slots:
     void handleWaterfallClick(double audioHz);
     void openSettings();
     void insertMacro(const QString &macroText);
+    void transmitComposer();
+    void abortTransmit();
+    void handleAudioStatus(const QString &status);
+    void handleRxLevel(double rms, double peak);
+    void handleTxStarted();
+    void handleTxFinished();
     void updateTxSafety();
 
 private:
@@ -56,6 +63,10 @@ private:
     QLabel *m_qsoSignalLabel = nullptr;
     QLabel *m_qsoFreqLabel = nullptr;
     QLabel *m_txSafetyLabel = nullptr;
+    QLabel *m_audioLabel = nullptr;
+    QLabel *m_rxLevelLabel = nullptr;
     QPushButton *m_sendButton = nullptr;
+    QPushButton *m_abortButton = nullptr;
+    AudioEngine *m_audioEngine = nullptr;
     MockDecoder m_decoder;
 };
