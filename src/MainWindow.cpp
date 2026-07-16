@@ -36,7 +36,7 @@ MainWindow::MainWindow(QWidget *parent)
 {
     loadSettings();
 
-    setWindowTitle("PSKedge v0.01 beta");
+    setWindowTitle("PSKedge v0.2.0 beta");
     resize(1480, 900);
 
     auto *settingsAction = new QAction("Setup", this);
