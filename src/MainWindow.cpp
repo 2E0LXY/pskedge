@@ -36,7 +36,7 @@ MainWindow::MainWindow(QWidget *parent)
 {
     loadSettings();
 
-    setWindowTitle("PSK Analyzer Pro - v1.0.0 beta");
+    setWindowTitle("PSKedge v0.01 beta");
     resize(1480, 900);
 
     auto *settingsAction = new QAction("Setup", this);
@@ -659,7 +659,7 @@ void MainWindow::prepareReply(const DecodeLine &line)
 
 void MainWindow::loadSettings()
 {
-    QSettings settings("OpenAI-Codex", "PSKAnalyzer");
+    QSettings settings("2E0LXY", "PSKedge");
     m_config.station.callsign = settings.value("station/callsign", m_config.station.callsign).toString();
     m_config.station.name = settings.value("station/name", m_config.station.name).toString();
     m_config.station.qth = settings.value("station/qth", m_config.station.qth).toString();
@@ -696,7 +696,7 @@ void MainWindow::loadSettings()
 
 void MainWindow::saveSettings() const
 {
-    QSettings settings("OpenAI-Codex", "PSKAnalyzer");
+    QSettings settings("2E0LXY", "PSKedge");
     settings.setValue("station/callsign", m_config.station.callsign);
     settings.setValue("station/name", m_config.station.name);
     settings.setValue("station/qth", m_config.station.qth);

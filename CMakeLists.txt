@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(PSKAnalyzer VERSION 0.01.0 LANGUAGES CXX)
+project(PSKedge VERSION 0.01.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -28,7 +28,7 @@ add_library(psk-core
 
 target_include_directories(psk-core PUBLIC src)
 
-add_executable(psk-analyzer
+add_executable(pskedge
     src/AppConfig.h
     src/audio/AudioEngine.cpp
     src/audio/AudioEngine.h
@@ -50,7 +50,7 @@ add_executable(psk-analyzer
     src/main.cpp
 )
 
-target_link_libraries(psk-analyzer PRIVATE Qt6::Widgets Qt6::Multimedia Qt6::Network psk-core)
+target_link_libraries(pskedge PRIVATE Qt6::Widgets Qt6::Multimedia Qt6::Network psk-core)
 
 add_executable(psk-core-selftest
     tools/psk_core_selftest.cpp
@@ -61,17 +61,17 @@ target_link_libraries(psk-core-selftest PRIVATE psk-core)
 add_test(NAME psk-core-selftest COMMAND psk-core-selftest)
 
 if(WIN32)
-    set_target_properties(psk-analyzer PROPERTIES WIN32_EXECUTABLE ON)
+    set_target_properties(pskedge PROPERTIES WIN32_EXECUTABLE ON)
 endif()
 
-install(TARGETS psk-analyzer RUNTIME DESTINATION bin)
+install(TARGETS pskedge RUNTIME DESTINATION bin)
 
-set(CPACK_PACKAGE_NAME "psk-analyzer")
+set(CPACK_PACKAGE_NAME "pskedge")
 set(CPACK_PACKAGE_VENDOR "2E0LXY")
 set(CPACK_PACKAGE_CONTACT "2E0LXY")
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "PSK-family digital mode analyzer and decoder prototype")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "PSKedge - coherent, weak-signal-capable PSK31 transceiver, backward compatible with standard PSK31")
 set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
-set(CPACK_PACKAGE_FILE_NAME "psk-analyzer-${PROJECT_VERSION}-${CMAKE_SYSTEM_PROCESSOR}")
+set(CPACK_PACKAGE_FILE_NAME "pskedge-${PROJECT_VERSION}-${CMAKE_SYSTEM_PROCESSOR}")
 
 if(UNIX AND NOT APPLE)
     set(CPACK_GENERATOR "DEB")
