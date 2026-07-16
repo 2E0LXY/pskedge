@@ -1,3 +1,4 @@
+#include "dsp/BlockSyncCodec.h"
 #include "dsp/Bpsk31Codec.h"
 #include "dsp/ConvCode.h"
 #include "dsp/Crc16.h"
@@ -250,6 +251,81 @@ bool checkCrc16(std::string *error)
     return true;
 }
 
+bool checkBlockSyncRoundTrip(std::string *error)
+{
+    // No-noise, no-offset round trip - fast structural correctness check
+    // (acquisition search, symbol alignment, coherent phase reference,
+    // FEC/CRC framing). This alone would NOT have caught two real bugs
+    // found during development (a 2x symbol-count-per-bit indexing error,
+    // and insufficient frequency resolution causing payload-length phase
+    // drift) - both only showed up under a timing/frequency offset, which
+    // the second check below exercises.
+    const std::vector<int> payload = {1, 0, 1, 1, 0, 0, 1, 0, 1, 1, 1, 0,
+                                       0, 0, 1, 1, 0, 1, 0, 0, 1, 1, 1, 0};
+    const psk::dsp::BlockSyncCodec codec;
+    const std::vector<double> samples = codec.modulateBlock(payload);
+    const psk::dsp::BlockDecodeResult result = codec.demodulateBlock(static_cast<int>(payload.size()), samples);
+
+    if (!result.acquired || !result.crcValid || result.payloadBits != payload) {
+        if (error) {
+            *error = "BlockSyncCodec no-noise round trip failed: acquired=" + std::to_string(result.acquired)
+                + " crcValid=" + std::to_string(result.crcValid);
+        }
+        return false;
+    }
+    return true;
+}
+
+bool checkBlockSyncOffsetAcquisition(std::string *error)
+{
+    // Fixed-seed regression check with a realistic frequency offset and
+    // unknown timing (block starts mid-buffer), at Eb/N0 = 6dB (SNR2500
+    // ~ -19dB, measured ~68% single-shot success rate during development -
+    // see the conversation/commit history for the full Monte Carlo
+    // characterisation). A single fixed-seed trial isn't a statistical
+    // re-validation of that rate; it catches the two structural bugs
+    // mentioned above (both of which broke every offset trial, not just
+    // some), without the multi-minute runtime of a full sweep in the
+    // ordinary test suite.
+    const std::vector<int> payload = {1, 0, 1, 1, 0, 0, 1, 0, 1, 1, 1, 0,
+                                       0, 0, 1, 1, 0, 1, 0, 0, 1, 1, 1, 0};
+    std::mt19937 rng(7);
+    std::normal_distribution<double> gauss(0.0, 1.0);
+
+    psk::dsp::BlockSyncConfig txConfig;
+    txConfig.carrierHz = 1003.5;
+    const psk::dsp::BlockSyncCodec txCodec(txConfig);
+    std::vector<double> samples = txCodec.modulateBlock(payload);
+
+    std::vector<double> padded(1500, 0.0);
+    padded.insert(padded.end(), samples.begin(), samples.end());
+    padded.resize(padded.size() + 2000, 0.0);
+
+    // sigma chosen for Eb/N0 ~ 6dB against this payload's measured
+    // per-symbol energy (~0.01 continuous-time units at 8kHz/15.625baud
+    // with this config) - see the Monte Carlo script this was validated
+    // against for the derivation; hardcoded here since recomputing it
+    // from scratch would just reproduce that derivation inline.
+    const double sigma = 0.09;
+    for (double &s : padded) {
+        s += sigma * gauss(rng);
+    }
+
+    const psk::dsp::BlockSyncCodec rxCodec; // nominal 1000Hz - doesn't know the true 1003.5Hz offset
+    const psk::dsp::BlockDecodeResult result = rxCodec.demodulateBlock(static_cast<int>(payload.size()), padded);
+
+    if (!result.acquired || !result.crcValid || result.payloadBits != payload) {
+        if (error) {
+            *error = "BlockSyncCodec offset+noise regression check failed (this specific fixed-seed "
+                "case is expected to succeed - if it doesn't, something regressed, though note the "
+                "underlying success rate at this SNR is ~68%, not 100%, so a real hardware/production "
+                "change to timing could occasionally flip this without indicating a bug)";
+        }
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 int main()
@@ -306,6 +382,16 @@ int main()
     if (!checkCrc16(&error)) {
         std::cerr << "Crc16 check failed: " << error << '\n';
         return 8;
+    }
+
+    if (!checkBlockSyncRoundTrip(&error)) {
+        std::cerr << "BlockSyncCodec round-trip check failed: " << error << '\n';
+        return 9;
+    }
+
+    if (!checkBlockSyncOffsetAcquisition(&error)) {
+        std::cerr << "BlockSyncCodec offset acquisition check failed: " << error << '\n';
+        return 10;
     }
 
     std::cout << "PSK core self-test passed\n";

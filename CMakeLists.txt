@@ -10,6 +10,8 @@ enable_testing()
 find_package(Qt6 REQUIRED COMPONENTS Widgets Multimedia)
 
 add_library(psk-core
+    src/dsp/BlockSyncCodec.cpp
+    src/dsp/BlockSyncCodec.h
     src/dsp/Bpsk31Codec.cpp
     src/dsp/Bpsk31Codec.h
     src/dsp/ConvCode.cpp
@@ -18,6 +20,10 @@ add_library(psk-core
     src/dsp/Crc16.h
     src/dsp/PskVaricode.cpp
     src/dsp/PskVaricode.h
+    src/dsp/SimpleFFT.cpp
+    src/dsp/SimpleFFT.h
+    src/dsp/SyncSequence.cpp
+    src/dsp/SyncSequence.h
 )
 
 target_include_directories(psk-core PUBLIC src)
