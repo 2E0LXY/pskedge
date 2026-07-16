@@ -37,6 +37,11 @@ signals:
     // Emitted with the full accumulated decode buffer each time new text is
     // recognised, so the UI layer decides how to diff/display it.
     void rxTextDecoded(const QString &text);
+    // Independent of decode success - reported alongside every decode
+    // attempt so the UI can show a real (if simplified) SNR reading even
+    // while still hunting for lock. See Bpsk31Codec::measureSignalQuality
+    // for what this is and isn't measuring.
+    void rxSignalQuality(double snrDb, double signalLevelDb, double noiseFloorDb);
     void txStarted();
     void txFinished();
 

@@ -48,6 +48,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_audioEngine, &AudioEngine::statusChanged, this, &MainWindow::handleAudioStatus);
     connect(m_audioEngine, &AudioEngine::rxLevelChanged, this, &MainWindow::handleRxLevel);
     connect(m_audioEngine, &AudioEngine::rxTextDecoded, this, &MainWindow::handleRxTextDecoded);
+    connect(m_audioEngine, &AudioEngine::rxSignalQuality, this, &MainWindow::handleRxSignalQuality);
     connect(m_audioEngine, &AudioEngine::txStarted, this, &MainWindow::handleTxStarted);
     connect(m_audioEngine, &AudioEngine::txFinished, this, &MainWindow::handleTxFinished);
     m_liveRxLine.channel = 1;
@@ -55,6 +56,15 @@ MainWindow::MainWindow(QWidget *parent)
     m_liveRxLine.state = "Searching";
     m_liveRxLine.metrics.audioFrequencyHz = 1000.0;
     m_liveRxLine.metrics.rfFrequencyMhz = 14.070000 + m_liveRxLine.metrics.audioFrequencyHz / 1000000.0;
+    // SignalMetrics' default snrDb/qualityPercent/imdDb are leftover
+    // placeholder values from before real measurement existed - override
+    // them here rather than display fabricated numbers before the first
+    // real reading arrives. imdDb has no real measurement implemented at
+    // all (see handleRxSignalQuality) so it stays "n/a" permanently, not
+    // just until first update.
+    m_liveRxLine.metrics.snrDb = 0.0;
+    m_liveRxLine.metrics.qualityPercent = 0;
+    m_liveRxLine.metrics.imdDb = "n/a";
 
     auto *central = new QWidget(this);
     auto *mainLayout = new QVBoxLayout(central);
@@ -406,6 +416,20 @@ void MainWindow::handleTxFinished()
     updateTxSafety();
 }
 
+void MainWindow::handleRxSignalQuality(double snrDb, double signalLevelDb, double noiseFloorDb)
+{
+    m_liveRxLine.metrics.snrDb = snrDb;
+    m_liveRxLine.metrics.signalLevelDb = signalLevelDb;
+    m_liveRxLine.metrics.noiseFloorDb = noiseFloorDb;
+    // Heuristic mapping from measured SNR to a 0-100 "quality" figure for
+    // the table/row-dimming logic - not itself a measured quantity. 0dB
+    // (no discernible signal above the reference noise bin) maps near 0%;
+    // 20dB+ (comfortably decodable) maps near 100%.
+    const int quality = std::clamp(static_cast<int>(std::lround(snrDb * 5.0)), 0, 100);
+    m_liveRxLine.metrics.qualityPercent = quality;
+    m_activeModel->addOrUpdate(m_liveRxLine);
+}
+
 void MainWindow::handleRxTextDecoded(const QString &text)
 {
     if (m_rxTranscript) {
@@ -456,7 +480,7 @@ void MainWindow::prepareReply(const DecodeLine &line)
     m_qsoFreqLabel->setText(QString("RF: %1 MHz   Audio: %2 Hz")
                                 .arg(line.metrics.rfFrequencyMhz, 0, 'f', 6)
                                 .arg(line.metrics.audioFrequencyHz, 0, 'f', 0));
-    m_qsoSignalLabel->setText(QString("SNR: %1 dB   Q: %2%   IMD: %3 dB")
+    m_qsoSignalLabel->setText(QString("SNR: %1 dB   Q: %2%   IMD: %3")
                                   .arg(line.metrics.snrDb, 0, 'f', 1)
                                   .arg(line.metrics.qualityPercent)
                                   .arg(line.metrics.imdDb));

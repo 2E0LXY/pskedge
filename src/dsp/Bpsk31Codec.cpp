@@ -370,6 +370,52 @@ std::string Bpsk31Codec::demodulateText(const std::vector<double> &samples) cons
     return PskVaricode::decodeTextBits(demodulateBits(samples));
 }
 
+Bpsk31SignalQuality Bpsk31Codec::measureSignalQuality(const std::vector<double> &samples) const
+{
+    const int sps = samplesPerSymbol();
+    auto blockRms = [&](double freqHz) {
+        if (samples.size() < static_cast<std::size_t>(sps)) {
+            return 0.0;
+        }
+        const double step = 2.0 * kPi * freqHz / m_config.sampleRate;
+        double phase = 0.0;
+        double sumSquares = 0.0;
+        int blocks = 0;
+        for (std::size_t start = 0; start + static_cast<std::size_t>(sps) <= samples.size();
+             start += static_cast<std::size_t>(sps)) {
+            double iSum = 0.0;
+            double qSum = 0.0;
+            for (int n = 0; n < sps; ++n) {
+                const double s = samples[start + static_cast<std::size_t>(n)];
+                iSum += s * std::cos(phase);
+                qSum += -s * std::sin(phase);
+                phase = wrapPhase(phase + step);
+            }
+            sumSquares += iSum * iSum + qSum * qSum;
+            ++blocks;
+        }
+        if (blocks == 0) {
+            return 0.0;
+        }
+        return std::sqrt(sumSquares / blocks) / sps;
+    };
+
+    // Out-of-band reference: 250Hz away from the tracked carrier is well
+    // outside the ~55-80Hz occupied bandwidth of a raised-cosine-shaped
+    // PSK31 signal (measured in tools/bandwidth checks during
+    // development), while still comfortably within a typical SSB audio
+    // passband, so it reads local noise/adjacent-signal energy rather than
+    // the wanted signal's own sidelobes.
+    const double signalRms = blockRms(m_config.carrierHz);
+    const double noiseRms = blockRms(m_config.carrierHz + 250.0);
+
+    Bpsk31SignalQuality quality;
+    quality.signalLevelDb = 20.0 * std::log10(std::max(signalRms, 1e-9));
+    quality.noiseFloorDb = 20.0 * std::log10(std::max(noiseRms, 1e-9));
+    quality.snrDb = quality.signalLevelDb - quality.noiseFloorDb;
+    return quality;
+}
+
 int Bpsk31Codec::samplesPerSymbol() const
 {
     return static_cast<int>(std::lround(m_config.sampleRate / m_config.symbolRate));

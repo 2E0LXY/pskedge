@@ -33,6 +33,7 @@ private slots:
     void handleTxFinished();
     void updateTxSafety();
     void handleRxTextDecoded(const QString &text);
+    void handleRxSignalQuality(double snrDb, double signalLevelDb, double noiseFloorDb);
 
 private:
     QString extractCallsign(const QString &text, const QString &fallback) const;

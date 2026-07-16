@@ -200,15 +200,17 @@ void AudioEngine::runRxDemodulator()
     config.sampleRate = m_rxSampleRate;
     config.carrierHz = m_rxTargetHz;
 
-    // NOTE: this demodulator has no carrier PLL and no symbol-timing
-    // recovery (see Bpsk31Codec). It integrate-and-dumps against a fixed
-    // NCO locked to m_rxTargetHz from the start of the retained buffer, so
-    // it will only lock onto a real off-air signal that happens to sit
-    // very close to that offset with negligible clock drift. This is
-    // enough to prove the RX path is live rather than fabricated, but is
-    // not yet a robust receiver - see IMPROVEMENTS.md.
+    // Costas carrier PLL + Gardner symbol-timing recovery + 5-hypothesis
+    // frequency acquisition (validated envelope: +/-10Hz carrier offset,
+    // +/-0.1% clock drift - see Bpsk31Codec.cpp). Still not a fully robust
+    // receiver against real off-air noise/QRM - see IMPROVEMENTS.md - but
+    // genuinely tracks moderate real-world impairments now, not just a
+    // perfectly aligned loopback.
     const psk::dsp::Bpsk31Codec codec(config);
     const std::string decoded = codec.demodulateText(m_rxSamples);
+
+    const psk::dsp::Bpsk31SignalQuality quality = codec.measureSignalQuality(m_rxSamples);
+    emit rxSignalQuality(quality.snrDb, quality.signalLevelDb, quality.noiseFloorDb);
 
     if (decoded != m_rxLastDecoded) {
         m_rxLastDecoded = decoded;

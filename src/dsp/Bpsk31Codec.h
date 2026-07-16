@@ -25,6 +25,12 @@ struct Bpsk31Config {
     double gardnerKi = 0.01875;
 };
 
+struct Bpsk31SignalQuality {
+    double signalLevelDb = 0.0;  // relative to full-scale audio input, not an absolute RF reference
+    double noiseFloorDb = 0.0;   // measured out-of-band (carrierHz + 250Hz), not the true RF noise floor
+    double snrDb = 0.0;
+};
+
 class Bpsk31Codec {
 public:
     explicit Bpsk31Codec(Bpsk31Config config = {});
@@ -33,6 +39,14 @@ public:
     std::vector<double> modulateText(const std::string &text) const;
     std::vector<int> demodulateBits(const std::vector<double> &samples) const;
     std::string demodulateText(const std::vector<double> &samples) const;
+
+    // Independent of the Costas/Gardner tracking state - a simple in-band
+    // vs out-of-band correlator energy comparison, not tied to whether a
+    // hypothesis actually locked. Reasonably accurate for a quick reading
+    // (an offset within the acquisition range still falls mostly within
+    // the fixed correlator's passband) but not a calibrated RF
+    // measurement - see the field comments on Bpsk31SignalQuality.
+    Bpsk31SignalQuality measureSignalQuality(const std::vector<double> &samples) const;
 
     int samplesPerSymbol() const;
     Bpsk31Config config() const;
