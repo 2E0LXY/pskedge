@@ -1,17 +1,18 @@
-# DM-780 feature gap analysis
+# Feature roadmap
 
-Source: https://www.hamradiodeluxe.com/features/dm780/ (fetched 2026-07-16).
-This is the reference used to build the mode dropdown in the top bar - that
-dropdown is a **target list of modes to implement**, not a claim that they
-already work. Only BPSK31 is real today; PSK128FEC is in development
-(core DSP exists, not yet wired into the UI/TX-RX pipeline).
+Notes on where this project stands versus mature, all-in-one ham radio
+digital-mode software generally, and what's planned next. This isn't a
+point-by-point comparison against any single competing product - it's a
+working list of the capabilities that kind of software typically has, used
+to prioritise what to build.
 
-## Mode list: curated, not a full DM-780 mirror
+## Mode list: curated, not a copy of any one program's full list
 
-DM-780 lists ~85 mode variants (14 mode families, most subdivided into
-bandwidth/tone-count variants). The dropdown here was trimmed to 18 entries
-covering only modes with real current amateur usage, based on research
-(2026-07-16) rather than copying DM-780's full historical list:
+Some established multi-mode suites list 80+ mode/bandwidth variants across
+a dozen-plus mode families. The dropdown here was deliberately trimmed to
+18 entries covering only modes with real current amateur usage, based on
+research (2026-07-16) rather than mirroring any one program's full
+historical list:
 
 - **Kept**: PSK/QPSK (31/63/125), RTTY (FSK/AFSK), CW, MFSK (8/16), Olivia
   (the three standard calling-frequency configs: 8/250, 16/500, 32/1000),
@@ -26,28 +27,29 @@ covering only modes with real current amateur usage, based on research
   tail. DominoEX/THOR specifically still get occasional enthusiast
   attention (YouTube "try this if bored of FT8" content) but nowhere near
   the activity level of what was kept.
-- Also cut: the many bandwidth/tone-count sub-variants DM-780 lists for
-  Contestia/RTTYM/Olivia/SSTV (e.g. Olivia had 13 variants in DM-780's
-  list; kept only the 3 that are actually used as calling frequencies).
+- Also cut: the many bandwidth/tone-count sub-variants some suites list for
+  Contestia/RTTYM/Olivia/SSTV (e.g. Olivia commonly appears with well over
+  ten variants; kept only the 3 that are actually used as calling
+  frequencies).
 
 If real-world usage patterns shift, or a specific QSO partner needs an
 unlisted variant, treat this list as revisable, not fixed - the point is
 matching what's actually on the air, not a permanent ruling.
 
-## What DM-780 advertises, and where we stand
+## Capability checklist and where we stand
 
-| DM-780 feature | Status here | Notes |
+| Capability | Status here | Notes |
 |---|---|---|
-| Wide range of digital modes (Contestia, DominoEX, Hell, MFSK, MT-63, Olivia, PSK/QPSK, RTTY, RTTYM, SSTV, THOR, THROB, CW) | **Only BPSK31 real** | See "Mode implementation priority" below |
+| Wide range of digital modes | **Only BPSK31 real** | See "Mode implementation priority" below |
 | Waterfall/spectrum display | **Have it** | Real FFT over live audio (fixed 2026-07-16 - was previously simulated noise) |
-| SuperSweeper (up to 40 simultaneous signals, sweeps passband, decodes CW/RTTY/PSK) | **Missing entirely** | No multi-signal wideband scanner exists. `DecodedLinesWidget` shows only the single actively-tracked channel, not a passband sweep. This was flagged as "not yet implemented" when it was still a table (see git history) and remains unbuilt after the UI rework. |
+| Wideband multi-signal scanner (monitor many channels across the passband at once) | **Missing entirely** | `DecodedLinesWidget` shows only the single actively-tracked channel, not a passband sweep. Flagged as "not yet implemented" earlier in this project's history and still unbuilt. |
 | PTT via COM port, VOX, TNC, or rig control | **CAT only** | rigctld + OmniRig implemented (2026-07-16); no COM/VOX/TNC PTT path |
-| Direct HRD Logbook integration (auto QSO logging) | **No logbook at all** | There is no QSO log, ADIF export/import, or contact recording anywhere in this app. This is DM-780's headline feature and the biggest gap. |
-| Direct HRD Rig Control integration | **Have it (basic)** | rigctld/OmniRig frequency read + set, PTT. No mode-sync, no split, no rig-driven waterfall centring |
+| Automatic QSO logging | **No logbook at all** | There is no QSO log, ADIF export/import, or contact recording anywhere in this app - the single biggest gap versus mature digital-mode software. |
+| Rig frequency/mode control | **Have it (basic)** | rigctld/OmniRig frequency read + set, PTT. No mode-sync, no split, no rig-driven waterfall centring |
 | Macro support for contest exchanges | **Have it** | `MacroEngine` exists |
-| PSK Reporter integration (real-time spotting) | **Missing** | No spotting network integration of any kind |
+| Real-time propagation spotting network integration | **Missing** | No spotting network integration of any kind |
 | CW decode (Morse-to-text) | **Missing** | Not started |
-| CW transmit via WinKeyer | **Missing** | Not started |
+| CW transmit via hardware keyer | **Missing** | Not started |
 | Keyboard CW (soundcard PTT, no hardware keyer) | **Missing** | Not started |
 
 ## Mode implementation priority
@@ -83,16 +85,17 @@ covers the 18 modes actually in the trimmed list above:
    despite being a real, still-used mode, simply because it shares the
    least code/architecture with what already exists.
 
-## Architectural prerequisites that block several DM-780 features at once
+## Architectural prerequisites that block several capabilities at once
 
-- **A logbook** (QSO database, ADIF import/export) is needed before "auto
-  QSO logging" can exist in any form - this blocks the single biggest
-  named gap regardless of which digital mode is active.
-- **A real SuperSweeper** requires wideband (not single-channel) signal
-  detection - a genuinely different receiver architecture from the
+- **A logbook** (QSO database, ADIF import/export) is needed before
+  automatic QSO logging can exist in any form - this blocks the single
+  biggest gap regardless of which digital mode is active.
+- **A real wideband scanner** requires multi-channel (not single-channel)
+  signal detection - a genuinely different receiver architecture from the
   single-frequency-hypothesis Costas/BlockSync demodulators built so far.
   Worth scoping as its own design task, not a small addition to the
   existing RX path.
-- **PSK Reporter integration** is comparatively small (HTTP/UDP spotting
-  protocol, well documented) but depends on decode confidence/callsign
-  extraction being reliable enough not to spam false spots.
+- **Spotting network integration** (e.g. PSK Reporter-style) is
+  comparatively small (a documented HTTP/UDP protocol) but depends on
+  decode confidence/callsign extraction being reliable enough not to spam
+  false spots.

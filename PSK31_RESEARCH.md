@@ -346,7 +346,7 @@ Setup sections:
 - Mode defaults.
 - Logbook and QSO workflow.
 - Spotting/reporting.
-- Waterfall and SuperSweeper-style monitor.
+- Waterfall and wideband-scanner-style monitor.
 - Alarms/watchlists.
 - Favorites and band presets.
 - Storage/backup.
@@ -487,15 +487,15 @@ Macro validation:
 - Preview measured signal fields from the currently selected decoder channel.
 - Omit unavailable measurement fields using a configurable rule: blank, `N/A`, or remove the whole phrase.
 
-## DM-780-Like Feature Targets
+## Integrated Feature Targets
 
-The application should feel closer to Ham Radio Deluxe Digital Master 780 than to a bare decoder. DM-780 is valuable because it joins digital modes, rig control, macros, logging, panoramic monitoring, and station workflow. We should implement those categories from the start instead of treating them as add-ons.
+The application should feel like a polished, integrated ham radio digital-mode suite rather than a bare decoder - joining digital modes, rig control, macros, logging, panoramic monitoring, and station workflow. We should implement those categories from the start instead of treating them as add-ons.
 
 Feature areas to match or exceed:
 
 - Soundcard digital-mode receive/transmit.
 - Waterfall-centered tuning.
-- Multi-signal panoramic monitor similar to DM-780 SuperSweeper.
+- Multi-signal panoramic monitor (wideband scanner) covering many channels across the passband at once.
 - Macro manager with unlimited or user-defined macro sets.
 - Mode-specific macro sets, including PSK, QPSK, PSK128FEC, and contest sets.
 - Radio-control macros.
@@ -555,9 +555,9 @@ Nice-to-have integrations:
 - LoTW/eQSL/Club Log export or upload later.
 - Contest exchange mode later, with serial numbers and fixed exchange fields.
 
-## SuperSweeper-Style Monitor
+## Panoramic Multi-Signal Monitor
 
-Add a panoramic monitor view inspired by DM-780 SuperSweeper, focused initially on PSK-family modes.
+Add a panoramic monitor view (a wideband scanner showing many candidate signals across the passband at once), focused initially on PSK-family modes.
 
 Requirements:
 
@@ -587,7 +587,7 @@ Also consider a visual ID/text ID option for human readability, but keep it opti
 
 ## RX/TX Frequency Handling
 
-DM-780 supports waterfall RX/TX markers and split audio operation. We need equivalent behavior.
+Mature integrated digital-mode software commonly supports waterfall RX/TX markers and split audio operation. We need equivalent behavior.
 
 Requirements:
 
@@ -804,7 +804,7 @@ See `IMPROVEMENTS.md` for the current next-pass review of receiver methods and U
 - split wideband signal detection from the 16 full decoder slots;
 - add explicit per-signal decoder states;
 - preserve soft confidence through symbol, character, line, and callsign decisions;
-- separate `Active Decoders` from a SuperSweeper-style candidate monitor;
+- separate `Active Decoders` from a wideband-scanner-style candidate monitor;
 - add a selected-QSO panel directly tied to the reply composer;
 - make TX safety, target callsign, TX frequency, and PTT state visually dominant;
 - replace the prototype table with real Qt models backed by full decoder/QSO data;

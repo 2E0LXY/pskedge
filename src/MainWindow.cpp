@@ -182,7 +182,7 @@ QWidget *MainWindow::buildTopBar()
     m_vfoLabel->setObjectName("vfo");
     auto *mode = new QComboBox(this);
     mode->setToolTip("Roadmap of modes to implement (curated to modes still in real use - see "
-                      "DM780_FEATURE_GAP.md) - only BPSK31 is actually decodable today; selecting "
+                      "FEATURE_ROADMAP.md) - only BPSK31 is actually decodable today; selecting "
                       "anything else does not change what this app can send or receive yet");
     mode->addItems({
         "PSK / BPSK31",

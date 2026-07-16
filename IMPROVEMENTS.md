@@ -23,7 +23,7 @@ Benefits:
 
 - More activity can be watched than the 16 full decoder limit.
 - CPU is reserved for signals that matter.
-- SuperSweeper-style monitoring becomes natural.
+- wideband-scanner-style monitoring becomes natural.
 - Automatic decoder assignment can prioritize CQ calls, watched callsigns, strong locks, or clicked traces.
 
 ### 2. Add A Per-Signal State Machine
@@ -108,7 +108,7 @@ Recommended persistent zones:
 
 - top: radio safety and frequency;
 - left: waterfall and signal selection;
-- right: active decoders and SuperSweeper candidates;
+- right: active decoders and wideband-scanner candidates;
 - bottom: QSO/reply/log workflow.
 
 ### 2. Separate Active Decoders From Sweeper Candidates

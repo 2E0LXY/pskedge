@@ -60,12 +60,12 @@ this codebase, not taken from a spec sheet.
 
 Standard BPSK31 mode in PSKedge uses the same Varicode alphabet and the same
 differential BPSK encoding at 31.25 baud as the original G3PLX PSK31
-specification. A PSKedge transmission is decodable by fldigi, DM-780, MixW,
-DigiPan, or any other spec-compliant PSK31 software or hardware decoder, and
-PSKedge can decode transmissions from any of them in return. The raised-
-cosine pulse shaping described above is not a deviation from the PSK31
-spec — it is what the spec itself describes and what most real-world PSK31
-transmitters already do.
+specification. A PSKedge transmission is decodable by any spec-compliant
+PSK31 software or hardware decoder (e.g. fldigi, DigiPan), and PSKedge can
+decode transmissions from any of them in return. The raised-cosine pulse
+shaping described above is not a deviation from the PSK31 spec — it is what
+the spec itself describes and what most real-world PSK31 transmitters
+already do.
 
 One honest caveat: PSKedge's receive correlator is matched specifically to
 its own transmitted pulse shape. Decoding a station using a differently-
@@ -82,18 +82,18 @@ a separate selectable mode once fully wired in, not a variant of BPSK31.
 ## Status and roadmap
 
 This is still an early-stage project. See
-[`DM780_FEATURE_GAP.md`](DM780_FEATURE_GAP.md) for a feature-by-feature
-comparison against Ham Radio Deluxe's DM-780 (the long-term reference point
-for where this project is heading) and a prioritised list of what's missing —
+[`FEATURE_ROADMAP.md`](FEATURE_ROADMAP.md) for a checklist of capabilities
+found in mature, all-in-one ham radio digital-mode software and where this
+project stands against them, plus a prioritised list of what's missing —
 notably, there is no QSO logbook yet and no wideband multi-signal scanner.
 See [`PSK31_RESEARCH.md`](PSK31_RESEARCH.md) for the PSK128FEC design
 research and rationale, including the Shannon-capacity analysis behind why
 "weak-signal" and "keyboard-speed free text" are fundamentally in tension at
 very low SNR.
 
-The mode selector in the top bar lists the modes DM-780 supports as a
-development roadmap — selecting anything other than BPSK31 there does not
-currently change what PSKedge can send or receive.
+The mode selector in the top bar lists a roadmap of modes worth building
+toward — selecting anything other than BPSK31 there does not currently
+change what PSKedge can send or receive.
 
 ## Build
 
