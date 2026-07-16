@@ -82,8 +82,6 @@ a separate selectable mode once fully wired in, not a variant of BPSK31.
 ## Status and roadmap
 
 This is still an early-stage project. See
-[`DM780_FEATURE_GAP.md`](DM780_FEATURE_GAP.md) for a feature-by-feature
-comparison against Ham Radio Deluxe's DM-780 (the long-term reference point
 for where this project is heading) and a prioritised list of what's missing —
 notably, there is no QSO logbook yet and no wideband multi-signal scanner.
 See [`PSK31_RESEARCH.md`](PSK31_RESEARCH.md) for the PSK128FEC design
@@ -91,7 +89,7 @@ research and rationale, including the Shannon-capacity analysis behind why
 "weak-signal" and "keyboard-speed free text" are fundamentally in tension at
 very low SNR.
 
-The mode selector in the top bar lists the modes DM-780 supports as a
+The mode selector in the top bar lists the modes supports as a
 development roadmap — selecting anything other than BPSK31 there does not
 currently change what PSKedge can send or receive.
 
