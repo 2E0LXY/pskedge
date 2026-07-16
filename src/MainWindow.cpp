@@ -14,6 +14,7 @@
 #include <QHeaderView>
 #include <QItemSelectionModel>
 #include <QLabel>
+#include <QMap>
 #include <QMenuBar>
 #include <QPair>
 #include <QPushButton>
@@ -44,13 +45,40 @@ MainWindow::MainWindow(QWidget *parent)
 
     m_activeModel = new DecoderTableModel(DecoderTableModel::Mode::ActiveDecoders, this);
     m_sweeperModel = new DecoderTableModel(DecoderTableModel::Mode::SweeperCandidates, this);
+
+    // CatController does blocking rigctld TCP round-trips and (on Windows)
+    // spawns a PowerShell process per OmniRig poll - moved to a dedicated
+    // worker thread so that I/O can't stall the GUI. No parent is passed
+    // to the constructor: moveToThread() requires the object have no
+    // parent living on a different thread. All commands to it go through
+    // the requestCat*() signals (connected below with the default
+    // auto-connection, which Qt makes queued automatically since sender
+    // and receiver are on different threads) rather than direct method
+    // calls, which would run unsynchronized on the calling thread.
+    m_catController = new CatController();
+    m_catThread = new QThread(this);
+    m_catController->moveToThread(m_catThread);
+    connect(m_catThread, &QThread::finished, m_catController, &QObject::deleteLater);
+    connect(this, &MainWindow::requestCatConfigure, m_catController, &CatController::configure);
+    connect(this, &MainWindow::requestCatStart, m_catController, &CatController::start);
+    connect(this, &MainWindow::requestCatStop, m_catController, &CatController::stop);
+    connect(this, &MainWindow::requestCatSetActiveRig, m_catController, &CatController::setActiveRig);
+    connect(this, &MainWindow::requestCatSetFrequency, m_catController, &CatController::setFrequencyHz);
+    connect(this, &MainWindow::requestCatSetPtt, m_catController, &CatController::setPtt);
+    connect(m_catController, &CatController::statusChanged, this, &MainWindow::handleCatStatus);
+    connect(m_catController, &CatController::snapshotChanged, this, &MainWindow::handleCatSnapshot);
+    connect(m_catController, &CatController::frequencySetResult, this, &MainWindow::handleCatFrequencyResult);
+    m_catThread->start();
+    emit requestCatConfigure(m_config);
     m_audioEngine = new AudioEngine(this);
     connect(m_audioEngine, &AudioEngine::statusChanged, this, &MainWindow::handleAudioStatus);
     connect(m_audioEngine, &AudioEngine::rxLevelChanged, this, &MainWindow::handleRxLevel);
     connect(m_audioEngine, &AudioEngine::rxTextDecoded, this, &MainWindow::handleRxTextDecoded);
     connect(m_audioEngine, &AudioEngine::rxSignalQuality, this, &MainWindow::handleRxSignalQuality);
+    connect(m_audioEngine, &AudioEngine::rxSpectrumReady, this, &MainWindow::handleRxSpectrumReady);
     connect(m_audioEngine, &AudioEngine::txStarted, this, &MainWindow::handleTxStarted);
     connect(m_audioEngine, &AudioEngine::txFinished, this, &MainWindow::handleTxFinished);
+    m_audioEngine->setDevices(m_config.audio.rxInputDeviceId, m_config.audio.txOutputDeviceId);
     m_liveRxLine.channel = 1;
     m_liveRxLine.mode = "BPSK31";
     m_liveRxLine.state = "Searching";
@@ -77,7 +105,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_waterfall, &WaterfallWidget::frequencyClicked, this, &MainWindow::handleWaterfallClick);
     mainSplitter->addWidget(m_waterfall);
     mainSplitter->addWidget(buildRightPanel());
-    mainSplitter->setStretchFactor(0, 3);
+    mainSplitter->setStretchFactor(0, 5);
     mainSplitter->setStretchFactor(1, 2);
     mainLayout->addWidget(mainSplitter, 1);
 
@@ -116,8 +144,23 @@ MainWindow::MainWindow(QWidget *parent)
     statusBar()->addPermanentWidget(m_rxLevelLabel);
 
     m_audioEngine->startRx();
+    if (m_config.cat.autoConnect) {
+        emit requestCatStart();
+    }
     updateStatusLabels();
     updateTxSafety();
+}
+
+MainWindow::~MainWindow()
+{
+    // Stop the worker thread cleanly before the CatController it owns (or
+    // this window) is destroyed - CatController is deleted via
+    // deleteLater() once the thread's event loop actually finishes (see
+    // the QThread::finished connection in the constructor), not here.
+    if (m_catThread) {
+        m_catThread->quit();
+        m_catThread->wait();
+    }
 }
 
 QWidget *MainWindow::buildTopBar()
@@ -132,13 +175,103 @@ QWidget *MainWindow::buildTopBar()
     auto *band = new QComboBox(this);
     band->addItems({"160m", "80m", "40m", "30m", "20m", "17m", "15m", "12m", "10m", "6m"});
     band->setCurrentText("20m");
-    // Visual band context only for now - not yet wired to CAT, which does
-    // not exist. Selecting a band here does not retune anything.
-    band->setToolTip("Band reference only - no CAT backend is implemented yet");
+    band->setToolTip("Sets the active CAT rig to the normal PSK dial frequency for this band");
+    connect(band, &QComboBox::currentTextChanged, this, &MainWindow::handleBandChanged);
 
     m_vfoLabel = new QLabel("14.070.000 MHz", this);
     m_vfoLabel->setObjectName("vfo");
-    auto *mode = new QLabel("Mode: BPSK31   BW: 60 Hz   RX   TX/RX Locked", this);
+    auto *mode = new QComboBox(this);
+    mode->setToolTip("Roadmap of modes to implement (see DM780_FEATURE_GAP.md) - only BPSK31 is "
+                      "actually decodable today; selecting anything else does not change what this "
+                      "app can send or receive yet");
+    mode->addItems({
+        "Contestia / CONTESTIA-16-1000",
+        "Contestia / CONTESTIA-16-2000",
+        "Contestia / CONTESTIA-16-500",
+        "Contestia / CONTESTIA-32-1000",
+        "Contestia / CONTESTIA-32-2000",
+        "Contestia / CONTESTIA-4-125",
+        "Contestia / CONTESTIA-4-250",
+        "Contestia / CONTESTIA-4-500",
+        "Contestia / CONTESTIA-64-1000",
+        "Contestia / CONTESTIA-64-2000",
+        "Contestia / CONTESTIA-8-1000",
+        "Contestia / CONTESTIA-8-2000",
+        "Contestia / CONTESTIA-8-250",
+        "Contestia / CONTESTIA-8-500",
+        "CW / CW",
+        "DominoEX / DominoEX4",
+        "DominoEX / DominoEX8",
+        "Hell / Feld Hell",
+        "Hell / Feld Hell x5",
+        "Hell / Feld Hell x9",
+        "Hell / FSK Hell 105",
+        "Hell / FSK Hell 245",
+        "Hell / Hell 80",
+        "Hell / Slow Hell",
+        "MFSK / MFSK16",
+        "MFSK / MFSK32",
+        "MFSK / MFSK4",
+        "MFSK / MFSK64",
+        "MFSK / MFSK8",
+        "MT-63 / MT63-1000",
+        "MT-63 / MT63-2000",
+        "MT-63 / MT63-500",
+        "Olivia / OLIVIA-16-1000",
+        "Olivia / OLIVIA-16-2000",
+        "Olivia / OLIVIA-16-500",
+        "Olivia / OLIVIA-32-1000",
+        "Olivia / OLIVIA-32-2000",
+        "Olivia / OLIVIA-4-125",
+        "Olivia / OLIVIA-4-250",
+        "Olivia / OLIVIA-4-500",
+        "Olivia / OLIVIA-64-2000",
+        "Olivia / OLIVIA-8-1000",
+        "Olivia / OLIVIA-8-2000",
+        "Olivia / OLIVIA-8-250",
+        "Olivia / OLIVIA-8-500",
+        "PSK / PSK125",
+        "PSK / PSK31",
+        "PSK / PSK63",
+        "QPSK / QPSK125",
+        "QPSK / QPSK31",
+        "QPSK / QPSK63",
+        "RTTY / RTTY (FSK)",
+        "RTTY / RTTY (AFSK)",
+        "RTTYM / RTTYM-16-1000",
+        "RTTYM / RTTYM-16-2000",
+        "RTTYM / RTTYM-16-500",
+        "RTTYM / RTTYM-32-1000",
+        "RTTYM / RTTYM-32-2000",
+        "RTTYM / RTTYM-4-125",
+        "RTTYM / RTTYM-4-250",
+        "RTTYM / RTTYM-4-500",
+        "RTTYM / RTTYM-64-2000",
+        "RTTYM / RTTYM-8-1000",
+        "RTTYM / RTTYM-8-2000",
+        "RTTYM / RTTYM-8-250",
+        "RTTYM / RTTYM-8-500",
+        "SSTV / Martin 1",
+        "SSTV / Martin 2",
+        "SSTV / P3",
+        "SSTV / P5",
+        "SSTV / P7",
+        "SSTV / Robot 36",
+        "SSTV / Scottie 1",
+        "SSTV / Scottie 2",
+        "SSTV / Scottie DX",
+        "THOR / THOR16",
+        "THOR / THOR4",
+        "THOR / THOR8",
+        "THROB / THROB1",
+        "THROB / THROB2",
+        "THROB / THROB4",
+        "THROB / THROBX1",
+        "THROB / THROBX2",
+        "THROB / THROBX4"
+    });
+    mode->setCurrentText("PSK / PSK31");
+    auto *modeStatus = new QLabel("BW: 60 Hz   RX   TX/RX Locked", this);
 
     layout->addWidget(setup);
     layout->addWidget(band);
@@ -146,44 +279,30 @@ QWidget *MainWindow::buildTopBar()
     layout->addWidget(m_vfoLabel);
     layout->addStretch();
     layout->addWidget(mode);
+    layout->addWidget(modeStatus);
     return bar;
 }
 
 QWidget *MainWindow::buildRightPanel()
 {
     auto *panel = new QWidget(this);
+    panel->setMinimumWidth(420);
     auto *layout = new QVBoxLayout(panel);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(8);
+    layout->setSpacing(0);
 
     auto *activeBox = new QGroupBox("Active Decoders", this);
     auto *activeLayout = new QVBoxLayout(activeBox);
-    m_activeView = new QTableView(this);
-    m_activeView->setModel(m_activeModel);
-    configureTable(m_activeView);
-    connect(m_activeView, &QTableView::clicked, this, &MainWindow::handleActiveDecodeClick);
-    activeLayout->addWidget(m_activeView);
+    activeLayout->setContentsMargins(8, 10, 8, 8);
+    m_decodedLines = new DecodedLinesWidget(this);
+    connect(m_decodedLines, &DecodedLinesWidget::lineClicked, this, [this](const DecodeLine &line) {
+        DecodeLine selected = line;
+        selected.callsign = extractCallsign(selected.text, selected.callsign);
+        prepareReply(selected);
+    });
+    activeLayout->addWidget(m_decodedLines);
 
-    auto *sweeperBox = new QGroupBox("Band Sweeper Candidates", this);
-    auto *sweeperLayout = new QVBoxLayout(sweeperBox);
-    auto *sweeperNote = new QLabel(
-        "Not yet implemented: no wideband candidate detector exists. "
-        "This is Active Decoders only until multi-signal scanning is built.", this);
-    sweeperNote->setWordWrap(true);
-    sweeperNote->setStyleSheet("color: #7a939e; font-weight: normal;");
-    sweeperLayout->addWidget(sweeperNote);
-    m_sweeperView = new QTableView(this);
-    m_sweeperView->setModel(m_sweeperModel);
-    configureTable(m_sweeperView);
-    connect(m_sweeperView, &QTableView::clicked, this, &MainWindow::handleSweeperClick);
-    sweeperLayout->addWidget(m_sweeperView);
-
-    auto *splitter = new QSplitter(Qt::Vertical, this);
-    splitter->addWidget(activeBox);
-    splitter->addWidget(sweeperBox);
-    splitter->setStretchFactor(0, 2);
-    splitter->setStretchFactor(1, 1);
-    layout->addWidget(splitter);
+    layout->addWidget(activeBox);
     return panel;
 }
 
@@ -290,10 +409,12 @@ void MainWindow::configureTable(QTableView *view)
 {
     view->horizontalHeader()->setStretchLastSection(true);
     view->verticalHeader()->setVisible(false);
+    view->verticalHeader()->setDefaultSectionSize(24);
     view->setSelectionBehavior(QAbstractItemView::SelectRows);
     view->setSelectionMode(QAbstractItemView::SingleSelection);
     view->setEditTriggers(QAbstractItemView::NoEditTriggers);
     view->setAlternatingRowColors(false);
+    view->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     view->setColumnWidth(0, 34);
     view->setColumnWidth(1, 72);
     view->setColumnWidth(2, 82);
@@ -342,6 +463,13 @@ void MainWindow::openSettings()
     if (dialog.exec() == QDialog::Accepted) {
         m_config = dialog.config();
         saveSettings();
+        m_audioEngine->setDevices(m_config.audio.rxInputDeviceId, m_config.audio.txOutputDeviceId);
+        emit requestCatConfigure(m_config);
+        if (m_config.cat.autoConnect) {
+            emit requestCatStart();
+        } else {
+            emit requestCatStop();
+        }
         updateStatusLabels();
         updateTxSafety();
     }
@@ -364,14 +492,22 @@ void MainWindow::transmitComposer()
     const double audioHz = m_selectedLine.metrics.audioFrequencyHz > 0.0
                                ? m_selectedLine.metrics.audioFrequencyHz
                                : 1000.0;
+    if (m_catController && m_config.cat.pttMethod.compare("CAT", Qt::CaseInsensitive) == 0) {
+        emit requestCatSetPtt(true);
+    }
     if (m_audioEngine->transmitBpsk31(text, audioHz)) {
         statusBar()->showMessage(QString("Transmitting BPSK31 at %1 Hz").arg(audioHz, 0, 'f', 0), 5000);
+    } else if (m_catController && m_config.cat.pttMethod.compare("CAT", Qt::CaseInsensitive) == 0) {
+        emit requestCatSetPtt(false);
     }
 }
 
 void MainWindow::abortTransmit()
 {
     m_audioEngine->stopTx();
+    if (m_catController && m_config.cat.pttMethod.compare("CAT", Qt::CaseInsensitive) == 0) {
+        emit requestCatSetPtt(false);
+    }
     statusBar()->showMessage("Transmit aborted", 3000);
 }
 
@@ -413,6 +549,9 @@ void MainWindow::handleTxStarted()
 
 void MainWindow::handleTxFinished()
 {
+    if (m_catController && m_config.cat.pttMethod.compare("CAT", Qt::CaseInsensitive) == 0) {
+        emit requestCatSetPtt(false);
+    }
     updateTxSafety();
 }
 
@@ -428,6 +567,89 @@ void MainWindow::handleRxSignalQuality(double snrDb, double signalLevelDb, doubl
     const int quality = std::clamp(static_cast<int>(std::lround(snrDb * 5.0)), 0, 100);
     m_liveRxLine.metrics.qualityPercent = quality;
     m_activeModel->addOrUpdate(m_liveRxLine);
+    refreshDecodedLines();
+}
+
+void MainWindow::handleRxSpectrumReady(const QVector<double> &levels)
+{
+    if (m_waterfall) {
+        m_waterfall->addSpectrumLine(levels);
+    }
+}
+
+void MainWindow::handleCatStatus(const QString &status)
+{
+    if (m_catLabel) {
+        m_catLabel->setText(status);
+    }
+}
+
+void MainWindow::handleCatSnapshot(const CatSnapshot &snapshot)
+{
+    if (!snapshot.connected) {
+        return;
+    }
+
+    m_catFrequencyHz = snapshot.frequencyHz;
+    if (m_vfoLabel) {
+        m_vfoLabel->setText(QString("%1 MHz").arg(snapshot.frequencyHz / 1000000.0, 0, 'f', 6));
+    }
+    m_liveRxLine.metrics.rfFrequencyMhz = (snapshot.frequencyHz + m_liveRxLine.metrics.audioFrequencyHz) / 1000000.0;
+    if (m_selectedLine.metrics.audioFrequencyHz > 0.0) {
+        m_selectedLine.metrics.rfFrequencyMhz = (snapshot.frequencyHz + m_selectedLine.metrics.audioFrequencyHz) / 1000000.0;
+    }
+}
+
+void MainWindow::handleBandChanged(const QString &band)
+{
+    const QMap<QString, double> pskDialHz = {
+        {"160m", 1838000.0},
+        {"80m", 3580000.0},
+        {"40m", 7070000.0},
+        {"30m", 10140000.0},
+        {"20m", 14070000.0},
+        {"17m", 18100000.0},
+        {"15m", 21070000.0},
+        {"12m", 24920000.0},
+        {"10m", 28120000.0},
+        {"6m", 50290000.0}
+    };
+
+    const double frequencyHz = pskDialHz.value(band, 0.0);
+    if (frequencyHz <= 0.0 || !m_catController) {
+        return;
+    }
+
+    // setFrequencyHz() used to return bool synchronously and this function
+    // acted on the result immediately - that only worked because
+    // CatController lived on the same thread as MainWindow. Now it lives
+    // on a worker thread (see the constructor), so the request is fired
+    // off here and the outcome is handled asynchronously in
+    // handleCatFrequencyResult() once CatController's frequencySetResult
+    // signal arrives. m_pendingBandName carries the band name across that
+    // gap so the eventual status message can still name it.
+    m_pendingBandName = band;
+    emit requestCatSetFrequency(frequencyHz);
+}
+
+void MainWindow::handleCatFrequencyResult(bool ok, double frequencyHz)
+{
+    const QString band = m_pendingBandName;
+    m_pendingBandName.clear();
+
+    if (!ok) {
+        statusBar()->showMessage(
+            band.isEmpty() ? QString("CAT did not accept the requested frequency")
+                           : QString("CAT did not accept %1 band frequency").arg(band),
+            4000);
+        return;
+    }
+
+    statusBar()->showMessage(
+        band.isEmpty()
+            ? QString("CAT set frequency to %1 MHz").arg(frequencyHz / 1000000.0, 0, 'f', 6)
+            : QString("CAT set %1 to %2 MHz").arg(band).arg(frequencyHz / 1000000.0, 0, 'f', 6),
+        4000);
 }
 
 void MainWindow::handleRxTextDecoded(const QString &text)
@@ -450,6 +672,14 @@ void MainWindow::handleRxTextDecoded(const QString &text)
     m_liveRxLine.metrics.lockQuality = m_liveRxLine.state;
     m_liveRxLine.callsign = extractCallsign(text, m_liveRxLine.callsign);
     m_activeModel->addOrUpdate(m_liveRxLine);
+    refreshDecodedLines();
+}
+
+void MainWindow::refreshDecodedLines()
+{
+    if (m_decodedLines) {
+        m_decodedLines->setLines(m_activeModel->lines());
+    }
 }
 
 QString MainWindow::extractCallsign(const QString &text, const QString &fallback) const
@@ -500,10 +730,29 @@ void MainWindow::loadSettings()
     m_config.station.name = settings.value("station/name", m_config.station.name).toString();
     m_config.station.qth = settings.value("station/qth", m_config.station.qth).toString();
     m_config.station.locator = settings.value("station/locator", m_config.station.locator).toString();
+    m_config.audio.rxInputDeviceId = settings.value("audio/rxInputDeviceId", m_config.audio.rxInputDeviceId).toString();
+    m_config.audio.txOutputDeviceId = settings.value("audio/txOutputDeviceId", m_config.audio.txOutputDeviceId).toString();
     m_config.cat.backend = settings.value("cat/backend", m_config.cat.backend).toString();
-    m_config.cat.radioModel = settings.value("cat/radioModel", m_config.cat.radioModel).toString();
-    m_config.cat.port = settings.value("cat/port", m_config.cat.port).toString();
-    m_config.cat.baudRate = settings.value("cat/baudRate", m_config.cat.baudRate).toInt();
+    m_config.cat.activeRig = settings.value("cat/activeRig", m_config.cat.activeRig).toInt();
+    m_config.cat.pttMethod = settings.value("cat/pttMethod", m_config.cat.pttMethod).toString();
+    m_config.cat.pollMs = settings.value("cat/pollMs", m_config.cat.pollMs).toInt();
+    m_config.cat.autoConnect = settings.value("cat/autoConnect", m_config.cat.autoConnect).toBool();
+    m_config.cat.rig1.enabled = settings.value("cat/rig1/enabled", m_config.cat.rig1.enabled).toBool();
+    m_config.cat.rig1.backend = settings.value("cat/rig1/backend", m_config.cat.rig1.backend).toString();
+    m_config.cat.rig1.rigSlot = settings.value("cat/rig1/slot", m_config.cat.rig1.rigSlot).toInt();
+    m_config.cat.rig1.radioModel = settings.value("cat/rig1/radioModel", settings.value("cat/radioModel", m_config.cat.rig1.radioModel)).toString();
+    m_config.cat.rig1.port = settings.value("cat/rig1/port", settings.value("cat/port", m_config.cat.rig1.port)).toString();
+    m_config.cat.rig1.baudRate = settings.value("cat/rig1/baudRate", settings.value("cat/baudRate", m_config.cat.rig1.baudRate)).toInt();
+    m_config.cat.rig1.host = settings.value("cat/rig1/host", m_config.cat.rig1.host).toString();
+    m_config.cat.rig1.tcpPort = settings.value("cat/rig1/tcpPort", m_config.cat.rig1.tcpPort).toInt();
+    m_config.cat.rig2.enabled = settings.value("cat/rig2/enabled", m_config.cat.rig2.enabled).toBool();
+    m_config.cat.rig2.backend = settings.value("cat/rig2/backend", m_config.cat.rig2.backend).toString();
+    m_config.cat.rig2.rigSlot = settings.value("cat/rig2/slot", m_config.cat.rig2.rigSlot).toInt();
+    m_config.cat.rig2.radioModel = settings.value("cat/rig2/radioModel", m_config.cat.rig2.radioModel).toString();
+    m_config.cat.rig2.port = settings.value("cat/rig2/port", m_config.cat.rig2.port).toString();
+    m_config.cat.rig2.baudRate = settings.value("cat/rig2/baudRate", m_config.cat.rig2.baudRate).toInt();
+    m_config.cat.rig2.host = settings.value("cat/rig2/host", m_config.cat.rig2.host).toString();
+    m_config.cat.rig2.tcpPort = settings.value("cat/rig2/tcpPort", m_config.cat.rig2.tcpPort).toInt();
     m_config.equipment.radioMake = settings.value("equipment/radioMake", m_config.equipment.radioMake).toString();
     m_config.equipment.radioModel = settings.value("equipment/radioModel", m_config.equipment.radioModel).toString();
     m_config.equipment.pskPower = settings.value("equipment/pskPower", m_config.equipment.pskPower).toInt();
@@ -518,10 +767,29 @@ void MainWindow::saveSettings() const
     settings.setValue("station/name", m_config.station.name);
     settings.setValue("station/qth", m_config.station.qth);
     settings.setValue("station/locator", m_config.station.locator);
+    settings.setValue("audio/rxInputDeviceId", m_config.audio.rxInputDeviceId);
+    settings.setValue("audio/txOutputDeviceId", m_config.audio.txOutputDeviceId);
     settings.setValue("cat/backend", m_config.cat.backend);
-    settings.setValue("cat/radioModel", m_config.cat.radioModel);
-    settings.setValue("cat/port", m_config.cat.port);
-    settings.setValue("cat/baudRate", m_config.cat.baudRate);
+    settings.setValue("cat/activeRig", m_config.cat.activeRig);
+    settings.setValue("cat/pttMethod", m_config.cat.pttMethod);
+    settings.setValue("cat/pollMs", m_config.cat.pollMs);
+    settings.setValue("cat/autoConnect", m_config.cat.autoConnect);
+    settings.setValue("cat/rig1/enabled", m_config.cat.rig1.enabled);
+    settings.setValue("cat/rig1/backend", m_config.cat.rig1.backend);
+    settings.setValue("cat/rig1/slot", m_config.cat.rig1.rigSlot);
+    settings.setValue("cat/rig1/radioModel", m_config.cat.rig1.radioModel);
+    settings.setValue("cat/rig1/port", m_config.cat.rig1.port);
+    settings.setValue("cat/rig1/baudRate", m_config.cat.rig1.baudRate);
+    settings.setValue("cat/rig1/host", m_config.cat.rig1.host);
+    settings.setValue("cat/rig1/tcpPort", m_config.cat.rig1.tcpPort);
+    settings.setValue("cat/rig2/enabled", m_config.cat.rig2.enabled);
+    settings.setValue("cat/rig2/backend", m_config.cat.rig2.backend);
+    settings.setValue("cat/rig2/slot", m_config.cat.rig2.rigSlot);
+    settings.setValue("cat/rig2/radioModel", m_config.cat.rig2.radioModel);
+    settings.setValue("cat/rig2/port", m_config.cat.rig2.port);
+    settings.setValue("cat/rig2/baudRate", m_config.cat.rig2.baudRate);
+    settings.setValue("cat/rig2/host", m_config.cat.rig2.host);
+    settings.setValue("cat/rig2/tcpPort", m_config.cat.rig2.tcpPort);
     settings.setValue("equipment/radioMake", m_config.equipment.radioMake);
     settings.setValue("equipment/radioModel", m_config.equipment.radioModel);
     settings.setValue("equipment/pskPower", m_config.equipment.pskPower);
@@ -531,7 +799,8 @@ void MainWindow::saveSettings() const
 
 void MainWindow::updateStatusLabels()
 {
-    m_catLabel->setText(QString("CAT: %1").arg(m_config.cat.backend));
+    const CatRigSettings &rig = m_config.cat.activeRig == 2 ? m_config.cat.rig2 : m_config.cat.rig1;
+    m_catLabel->setText(QString("CAT Rig %1: %2").arg(m_config.cat.activeRig).arg(rig.enabled ? rig.backend : "disabled"));
 }
 
 void MainWindow::updateTxSafety()

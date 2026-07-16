@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QMetaType>
 #include <QString>
 
 struct StationDetails {
@@ -11,13 +12,34 @@ struct StationDetails {
     QString defaultReport = "599";
 };
 
-struct CatSettings {
-    QString backend = "Hamlib native";
+struct CatRigSettings {
+    bool enabled = false;
+    QString backend = "Hamlib rigctld";
+    int rigSlot = 1;
     QString radioModel = "Manual";
     QString port = "";
     int baudRate = 9600;
     QString host = "127.0.0.1";
     int tcpPort = 4532;
+};
+
+struct CatSettings {
+    QString backend = "Hamlib rigctld";
+    int activeRig = 1;
+    CatRigSettings rig1 = [] {
+        CatRigSettings rig;
+        rig.enabled = false;
+        rig.rigSlot = 1;
+        rig.tcpPort = 4532;
+        return rig;
+    }();
+    CatRigSettings rig2 = [] {
+        CatRigSettings rig;
+        rig.enabled = false;
+        rig.rigSlot = 2;
+        rig.tcpPort = 4533;
+        return rig;
+    }();
     QString pttMethod = "CAT";
     int pollMs = 500;
     bool autoConnect = false;
@@ -40,9 +62,17 @@ struct AntennaProfile {
     QString direction = "";
 };
 
+struct AudioSettings {
+    QString rxInputDeviceId;
+    QString txOutputDeviceId;
+};
+
 struct AppConfig {
     StationDetails station;
     CatSettings cat;
+    AudioSettings audio;
     EquipmentProfile equipment;
     AntennaProfile antenna;
 };
+
+Q_DECLARE_METATYPE(AppConfig)

@@ -1,6 +1,7 @@
 #include "AudioEngine.h"
 
 #include "dsp/Bpsk31Codec.h"
+#include "dsp/SimpleFFT.h"
 
 #include <QAudioDevice>
 #include <QAudioSink>
@@ -10,12 +11,15 @@
 
 #include <algorithm>
 #include <cmath>
+#include <complex>
 #include <cstdint>
 #include <limits>
 
 AudioEngine::AudioEngine(QObject *parent)
     : QObject(parent)
 {
+    m_rxDemodTimer.setInterval(750);
+    connect(&m_rxDemodTimer, &QTimer::timeout, this, &AudioEngine::runRxDemodulator);
 }
 
 AudioEngine::~AudioEngine()
@@ -24,11 +28,21 @@ AudioEngine::~AudioEngine()
     stopRx();
 }
 
+void AudioEngine::setDevices(const QString &rxInputDeviceId, const QString &txOutputDeviceId)
+{
+    const bool rxChanged = m_rxInputDeviceId != rxInputDeviceId;
+    m_rxInputDeviceId = rxInputDeviceId;
+    m_txOutputDeviceId = txOutputDeviceId;
+    if (rxChanged && m_source) {
+        startRx();
+    }
+}
+
 bool AudioEngine::startRx()
 {
     stopRx();
 
-    const QAudioDevice input = QMediaDevices::defaultAudioInput();
+    const QAudioDevice input = selectedInputDevice();
     if (input.isNull()) {
         emit statusChanged("RX audio: no input device");
         return false;
@@ -46,7 +60,7 @@ bool AudioEngine::startRx()
     if (input.isFormatSupported(monoFormat)) {
         format = monoFormat;
     } else if (!input.isFormatSupported(format)) {
-        emit statusChanged("RX audio: no supported 16-bit format on default input");
+        emit statusChanged(QString("RX audio: no supported 16-bit format on %1").arg(input.description()));
         return false;
     }
     // If only the multi-channel preferred format is supported, keep it and
@@ -56,6 +70,9 @@ bool AudioEngine::startRx()
     m_rxChannelCount = std::max(1, format.channelCount());
     m_rxSamples.clear();
     m_rxLastDecoded.clear();
+    m_rxDemodPending = false;
+    m_rxLevelClock.restart();
+    m_rxSpectrumClock.restart();
 
     m_source = new QAudioSource(input, format, this);
     m_rxDevice = m_source->start();
@@ -66,7 +83,8 @@ bool AudioEngine::startRx()
     }
 
     connect(m_rxDevice, &QIODevice::readyRead, this, &AudioEngine::readRxAudio);
-    emit statusChanged(QString("RX audio: listening at %1 Hz").arg(m_rxSampleRate, 0, 'f', 0));
+    m_rxDemodTimer.start();
+    emit statusChanged(QString("RX audio: %1 at %2 Hz").arg(input.description()).arg(m_rxSampleRate, 0, 'f', 0));
     return true;
 }
 
@@ -78,23 +96,26 @@ void AudioEngine::setRxTargetHz(double audioHz)
     // start clean rather than mixing bits demodulated at two frequencies.
     m_rxSamples.clear();
     m_rxLastDecoded.clear();
+    m_rxDemodPending = false;
 }
 
 void AudioEngine::stopRx()
 {
+    m_rxDemodTimer.stop();
     if (m_source) {
         m_source->stop();
         m_source->deleteLater();
         m_source = nullptr;
     }
     m_rxDevice = nullptr;
+    m_rxDemodPending = false;
 }
 
 bool AudioEngine::transmitBpsk31(const QString &text, double audioHz)
 {
     stopTx();
 
-    const QAudioDevice output = QMediaDevices::defaultAudioOutput();
+    const QAudioDevice output = selectedOutputDevice();
     if (output.isNull()) {
         emit statusChanged("TX audio: no output device");
         return false;
@@ -107,7 +128,7 @@ bool AudioEngine::transmitBpsk31(const QString &text, double audioHz)
     if (output.isFormatSupported(monoFormat)) {
         format = monoFormat;
     } else if (!output.isFormatSupported(format)) {
-        emit statusChanged("TX audio: no supported 16-bit format on default output");
+        emit statusChanged(QString("TX audio: no supported 16-bit format on %1").arg(output.description()));
         return false;
     }
 
@@ -132,7 +153,7 @@ bool AudioEngine::transmitBpsk31(const QString &text, double audioHz)
     connect(m_sink, &QAudioSink::stateChanged, this, &AudioEngine::handleSinkStateChanged);
     m_sink->start(m_txBuffer);
     emit txStarted();
-    emit statusChanged(QString("TX audio: BPSK31 at %1 Hz").arg(config.carrierHz, 0, 'f', 0));
+    emit statusChanged(QString("TX audio: %1 BPSK31 at %2 Hz").arg(output.description()).arg(config.carrierHz, 0, 'f', 0));
     return true;
 }
 
@@ -180,8 +201,17 @@ void AudioEngine::readRxAudio()
         m_rxSamples.push_back(value);
     }
 
-    const double rms = std::sqrt(sumSquares / std::max(1, frameCount));
-    emit rxLevelChanged(rms, peak);
+    if (!m_rxLevelClock.isValid() || m_rxLevelClock.elapsed() >= 100) {
+        const double rms = std::sqrt(sumSquares / std::max(1, frameCount));
+        emit rxLevelChanged(rms, peak);
+        m_rxLevelClock.restart();
+    }
+
+    if (!m_rxSpectrumClock.isValid() || m_rxSpectrumClock.elapsed() >= 80) {
+        publishRxSpectrum();
+        m_rxSpectrumClock.restart();
+    }
+
     if (m_rxSamples.size() > kMaxRxSamples) {
         // Trim from the front. This resets demodulator continuity at the
         // trim point (see header comment on kMaxRxSamples) but bounds
@@ -191,11 +221,58 @@ void AudioEngine::readRxAudio()
         m_rxLastDecoded.clear();
     }
 
-    runRxDemodulator();
+    m_rxDemodPending = true;
+}
+
+void AudioEngine::publishRxSpectrum()
+{
+    constexpr std::size_t kFftSize = 2048;
+    constexpr int kOutputBins = 256;
+    constexpr double kMinHz = 300.0;
+    constexpr double kMaxHz = 3000.0;
+    constexpr double kPi = 3.141592653589793238462643383279502884;
+
+    QVector<double> levels(kOutputBins, 0.0);
+    if (m_rxSamples.size() < kFftSize || m_rxSampleRate <= 0.0) {
+        emit rxSpectrumReady(levels);
+        return;
+    }
+
+    std::vector<std::complex<double>> fft(kFftSize);
+    const std::size_t start = m_rxSamples.size() - kFftSize;
+    for (std::size_t i = 0; i < kFftSize; ++i) {
+        const double window = 0.5 - 0.5 * std::cos(2.0 * kPi * static_cast<double>(i) / static_cast<double>(kFftSize - 1));
+        fft[i] = {m_rxSamples[start + i] * window, 0.0};
+    }
+
+    psk::dsp::SimpleFFT::forward(fft);
+
+    for (int out = 0; out < kOutputBins; ++out) {
+        const double binStartHz = kMinHz + (kMaxHz - kMinHz) * static_cast<double>(out) / kOutputBins;
+        const double binEndHz = kMinHz + (kMaxHz - kMinHz) * static_cast<double>(out + 1) / kOutputBins;
+        const int firstBin = std::max(1, static_cast<int>(std::floor(binStartHz * static_cast<double>(kFftSize) / m_rxSampleRate)));
+        const int lastBin = std::min(static_cast<int>(kFftSize / 2 - 1),
+                                     static_cast<int>(std::ceil(binEndHz * static_cast<double>(kFftSize) / m_rxSampleRate)));
+
+        double peak = 0.0;
+        for (int bin = firstBin; bin <= lastBin; ++bin) {
+            peak = std::max(peak, std::abs(fft[static_cast<std::size_t>(bin)]));
+        }
+
+        const double db = peak > 1.0e-12 ? 20.0 * std::log10(peak / static_cast<double>(kFftSize)) : -120.0;
+        levels[out] = std::clamp((db + 95.0) / 65.0, 0.0, 1.0);
+    }
+
+    emit rxSpectrumReady(levels);
 }
 
 void AudioEngine::runRxDemodulator()
 {
+    if (!m_rxDemodPending || m_rxSamples.empty()) {
+        return;
+    }
+    m_rxDemodPending = false;
+
     psk::dsp::Bpsk31Config config;
     config.sampleRate = m_rxSampleRate;
     config.carrierHz = m_rxTargetHz;
@@ -247,4 +324,32 @@ QByteArray AudioEngine::pcm16FromSamples(const std::vector<double> &samples, int
     }
 
     return bytes;
+}
+
+QAudioDevice AudioEngine::selectedInputDevice() const
+{
+    const QList<QAudioDevice> devices = QMediaDevices::audioInputs();
+    if (!m_rxInputDeviceId.isEmpty()) {
+        const QByteArray wanted = m_rxInputDeviceId.toUtf8();
+        for (const QAudioDevice &device : devices) {
+            if (device.id() == wanted) {
+                return device;
+            }
+        }
+    }
+    return QMediaDevices::defaultAudioInput();
+}
+
+QAudioDevice AudioEngine::selectedOutputDevice() const
+{
+    const QList<QAudioDevice> devices = QMediaDevices::audioOutputs();
+    if (!m_txOutputDeviceId.isEmpty()) {
+        const QByteArray wanted = m_txOutputDeviceId.toUtf8();
+        for (const QAudioDevice &device : devices) {
+            if (device.id() == wanted) {
+                return device;
+            }
+        }
+    }
+    return QMediaDevices::defaultAudioOutput();
 }

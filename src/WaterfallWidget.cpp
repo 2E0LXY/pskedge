@@ -3,44 +3,45 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QtMath>
+#include <algorithm>
 
 WaterfallWidget::WaterfallWidget(QWidget *parent)
     : QWidget(parent)
 {
     setMinimumSize(520, 320);
-    m_timer.setInterval(45);
-    connect(&m_timer, &QTimer::timeout, this, &WaterfallWidget::advanceFrame);
-    m_timer.start();
 }
 
 void WaterfallWidget::paintEvent(QPaintEvent *)
 {
+    constexpr int kScaleWidth = 64;
+
     QPainter painter(this);
     painter.fillRect(rect(), QColor(4, 8, 18));
     painter.drawImage(rect(), m_image);
 
-    painter.setPen(QColor(90, 120, 145, 160));
-    for (int i = 0; i <= 8; ++i) {
-        const int x = i * width() / 8;
-        painter.drawLine(x, 0, x, height());
-        painter.drawText(x + 4, 16, QString::number(1000 + i * 250) + " Hz");
+    painter.fillRect(0, 0, kScaleWidth, height(), QColor(2, 6, 12, 210));
+    painter.setPen(QColor(120, 220, 235, 210));
+    for (int i = 0; i <= 9; ++i) {
+        const double hz = 300.0 + i * 300.0;
+        const int y = yForAudio(hz);
+        painter.drawLine(kScaleWidth, y, width(), y);
+        const QRect labelRect(4, qBound(2, y - 9, qMax(2, height() - 18)), kScaleWidth - 8, 18);
+        painter.drawText(labelRect, Qt::AlignLeft | Qt::AlignVCenter, QString::number(hz, 'f', 0) + " Hz");
     }
+    painter.setPen(QColor(160, 245, 255, 230));
+    painter.drawLine(kScaleWidth, 0, kScaleWidth, height());
 
-    painter.setPen(QColor(0, 220, 255));
-    for (int lane = 1; lane <= 16; ++lane) {
-        const int x = lane * width() / 17;
-        painter.drawLine(x, 24, x, height());
-    }
-
-    const int rxX = xForAudio(m_rxAudioHz);
+    const int rxY = yForAudio(m_rxAudioHz);
     painter.setPen(QPen(QColor(98, 235, 255), 2));
-    painter.drawLine(rxX, 0, rxX, height());
-    painter.drawText(rxX + 4, height() - 28, QString("RX %1 Hz").arg(m_rxAudioHz, 0, 'f', 0));
+    painter.drawLine(kScaleWidth, rxY, width(), rxY);
+    painter.drawText(width() - 110, qBound(14, rxY - 4, qMax(14, height() - 22)),
+                     QString("RX %1 Hz").arg(m_rxAudioHz, 0, 'f', 0));
 
-    const int txX = xForAudio(m_txAudioHz);
+    const int txY = yForAudio(m_txAudioHz);
     painter.setPen(QPen(m_txLockedToRx ? QColor(105, 255, 150) : QColor(255, 177, 62), 2, Qt::DashLine));
-    painter.drawLine(txX, 0, txX, height());
-    painter.drawText(txX + 4, height() - 10, QString("TX %1 Hz").arg(m_txAudioHz, 0, 'f', 0));
+    painter.drawLine(kScaleWidth, txY, width(), txY);
+    painter.drawText(width() - 110, qBound(14, txY + 16, qMax(14, height() - 4)),
+                     QString("TX %1 Hz").arg(m_txAudioHz, 0, 'f', 0));
 }
 
 void WaterfallWidget::resizeEvent(QResizeEvent *)
@@ -59,12 +60,12 @@ void WaterfallWidget::resizeEvent(QResizeEvent *)
 
 void WaterfallWidget::mousePressEvent(QMouseEvent *event)
 {
-    const double audioHz = audioForX(event->position().x());
+    const double audioHz = audioForY(event->position().y());
     setRxAudioHz(audioHz);
     emit frequencyClicked(audioHz);
 }
 
-void WaterfallWidget::advanceFrame()
+void WaterfallWidget::addSpectrumLine(const QVector<double> &levels)
 {
     if (m_image.size() != size()) {
         m_image = QImage(size(), QImage::Format_RGB32);
@@ -75,25 +76,16 @@ void WaterfallWidget::advanceFrame()
     painter.drawImage(QPoint(-2, 0), m_image);
 
     for (int y = 0; y < height(); ++y) {
-        const double yf = static_cast<double>(y) / qMax(1, height());
-        double level = 0.08 + 0.09 * qSin((m_tick + y) * 0.03);
-
-        const double traces[] = {0.18, 0.32, 0.46, 0.63, 0.78};
-        for (double trace : traces) {
-            const double distance = qAbs(yf - trace);
-            level += qExp(-distance * distance * 900.0) * (0.55 + 0.35 * qSin(m_tick * 0.08 + trace * 20.0));
-        }
-
-        if ((m_tick / 12 + y) % 97 < 3) {
-            level += 0.75;
-        }
+        const double audioHz = audioForY(y);
+        const double normalized = (audioHz - 300.0) / 2700.0;
+        const int bin = qBound(0, static_cast<int>(normalized * levels.size()), qMax(0, levels.size() - 1));
+        const double level = levels.isEmpty() ? 0.0 : levels.at(bin);
 
         painter.setPen(colorForLevel(qBound(0.0, level, 1.0)));
         painter.drawPoint(width() - 2, y);
         painter.drawPoint(width() - 1, y);
     }
 
-    ++m_tick;
     update();
 }
 
@@ -130,13 +122,13 @@ void WaterfallWidget::setTxLockedToRx(bool locked)
     update();
 }
 
-int WaterfallWidget::xForAudio(double audioHz) const
+int WaterfallWidget::yForAudio(double audioHz) const
 {
     const double normalized = (audioHz - 300.0) / 2700.0;
-    return qBound(0, int(normalized * width()), qMax(0, width() - 1));
+    return qBound(0, int((1.0 - normalized) * height()), qMax(0, height() - 1));
 }
 
-double WaterfallWidget::audioForX(double x) const
+double WaterfallWidget::audioForY(double y) const
 {
-    return 300.0 + (x / qMax(1, width())) * 2700.0;
+    return 300.0 + (1.0 - y / qMax(1, height())) * 2700.0;
 }

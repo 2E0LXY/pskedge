@@ -12,7 +12,10 @@ DecoderTableModel::DecoderTableModel(Mode mode, QObject *parent)
 
 int DecoderTableModel::rowCount(const QModelIndex &parent) const
 {
-    return parent.isValid() ? 0 : m_lines.size();
+    if (parent.isValid()) {
+        return 0;
+    }
+    return m_mode == Mode::ActiveDecoders ? 16 : m_lines.size();
 }
 
 int DecoderTableModel::columnCount(const QModelIndex &parent) const
@@ -22,7 +25,17 @@ int DecoderTableModel::columnCount(const QModelIndex &parent) const
 
 QVariant DecoderTableModel::data(const QModelIndex &index, int role) const
 {
-    if (!index.isValid() || index.row() < 0 || index.row() >= m_lines.size()) {
+    if (!index.isValid() || index.row() < 0 || index.row() >= rowCount()) {
+        return {};
+    }
+
+    if (index.row() >= m_lines.size()) {
+        if (role == Qt::DisplayRole && m_mode == Mode::ActiveDecoders && index.column() == 0) {
+            return QString::number(index.row() + 1);
+        }
+        if (role == Qt::ForegroundRole) {
+            return QBrush(QColor(80, 105, 116));
+        }
         return {};
     }
 
@@ -62,6 +75,12 @@ void DecoderTableModel::addOrUpdate(const DecodeLine &line)
                 return;
             }
         }
+        if (m_lines.size() < m_limit) {
+            const int row = m_lines.size();
+            m_lines.append(line);
+            emit dataChanged(index(row, 0), index(row, columnCount() - 1));
+        }
+        return;
     }
 
     if (m_lines.size() >= m_limit) {
@@ -81,6 +100,11 @@ DecodeLine DecoderTableModel::lineAt(int row) const
         return {};
     }
     return m_lines.at(row);
+}
+
+QVector<DecodeLine> DecoderTableModel::lines() const
+{
+    return m_lines;
 }
 
 void DecoderTableModel::clear()

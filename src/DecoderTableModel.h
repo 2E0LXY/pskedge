@@ -24,6 +24,7 @@ public:
     void addOrUpdate(const DecodeLine &line);
     void clear();
     DecodeLine lineAt(int row) const;
+    QVector<DecodeLine> lines() const;
 
 private:
     QString columnText(const DecodeLine &line, int column) const;

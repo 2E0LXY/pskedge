@@ -2,9 +2,13 @@
 
 #include "dsp/Bpsk31Codec.h"
 
+#include <QAudioDevice>
 #include <QAudioFormat>
 #include <QByteArray>
+#include <QElapsedTimer>
 #include <QObject>
+#include <QTimer>
+#include <QVector>
 
 #include <string>
 #include <vector>
@@ -21,6 +25,7 @@ public:
     explicit AudioEngine(QObject *parent = nullptr);
     ~AudioEngine() override;
 
+    void setDevices(const QString &rxInputDeviceId, const QString &txOutputDeviceId);
     bool startRx();
     void stopRx();
     bool transmitBpsk31(const QString &text, double audioHz);
@@ -42,6 +47,7 @@ signals:
     // while still hunting for lock. See Bpsk31Codec::measureSignalQuality
     // for what this is and isn't measuring.
     void rxSignalQuality(double snrDb, double signalLevelDb, double noiseFloorDb);
+    void rxSpectrumReady(const QVector<double> &levels);
     void txStarted();
     void txFinished();
 
@@ -51,18 +57,27 @@ private slots:
 
 private:
     QByteArray pcm16FromSamples(const std::vector<double> &samples, int channelCount) const;
+    QAudioDevice selectedInputDevice() const;
+    QAudioDevice selectedOutputDevice() const;
     void runRxDemodulator();
+    void publishRxSpectrum();
 
     QAudioSink *m_sink = nullptr;
     QAudioSource *m_source = nullptr;
     QBuffer *m_txBuffer = nullptr;
     QIODevice *m_rxDevice = nullptr;
+    QTimer m_rxDemodTimer;
+    QElapsedTimer m_rxLevelClock;
+    QElapsedTimer m_rxSpectrumClock;
 
     double m_rxTargetHz = 1000.0;
     double m_rxSampleRate = 8000.0;
     int m_rxChannelCount = 1;
     std::vector<double> m_rxSamples;
     std::string m_rxLastDecoded;
+    bool m_rxDemodPending = false;
+    QString m_rxInputDeviceId;
+    QString m_txOutputDeviceId;
 
     // Hard cap on retained RX samples. AudioEngine re-runs
     // Bpsk31Codec::demodulateText() over the ENTIRE retained buffer on

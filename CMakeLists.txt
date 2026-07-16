@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 enable_testing()
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets Multimedia)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Multimedia Network)
 
 add_library(psk-core
     src/dsp/BlockSyncCodec.cpp
@@ -32,6 +32,10 @@ add_executable(psk-analyzer
     src/AppConfig.h
     src/audio/AudioEngine.cpp
     src/audio/AudioEngine.h
+    src/cat/CatController.cpp
+    src/cat/CatController.h
+    src/DecodedLinesWidget.cpp
+    src/DecodedLinesWidget.h
     src/DecoderTableModel.cpp
     src/DecoderTableModel.h
     src/MacroEngine.cpp
@@ -46,7 +50,7 @@ add_executable(psk-analyzer
     src/main.cpp
 )
 
-target_link_libraries(psk-analyzer PRIVATE Qt6::Widgets Qt6::Multimedia psk-core)
+target_link_libraries(psk-analyzer PRIVATE Qt6::Widgets Qt6::Multimedia Qt6::Network psk-core)
 
 add_executable(psk-core-selftest
     tools/psk_core_selftest.cpp
