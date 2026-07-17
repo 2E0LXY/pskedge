@@ -138,8 +138,6 @@ The workflow runs on pushes, pull requests, version tags, and manual
 
 ## License
 
-PSKedge is proprietary software - see [`LICENSE.txt`](LICENSE.txt) for the
-full terms. The source is publicly visible on GitHub for transparency and
-review, but that visibility does not itself grant any license to copy,
-modify, or redistribute it; all rights not expressly granted in
-`LICENSE.txt` are reserved.
+PSKedge is licensed under the MIT License - see [`LICENSE.txt`](LICENSE.txt)
+for the full terms. You're free to use, copy, modify, and redistribute it,
+provided the copyright notice and license text are included.

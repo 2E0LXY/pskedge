@@ -1,88 +1,32 @@
-PSKedge End User License Agreement
+MIT License
 
-Copyright (c) 2026 2E0LXY. All rights reserved.
+Copyright (c) 2026 Daren Loxley (2E0LXY)
 
-This software ("PSKedge") is proprietary. This is a license agreement,
-not an agreement for sale. By installing, copying, or otherwise using
-PSKedge, you agree to be bound by the terms of this agreement. If you
-do not agree, do not install or use the software.
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
 
-1. GRANT OF LICENSE
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
 
-Subject to your compliance with this agreement, the copyright holder
-grants you a limited, non-exclusive, non-transferable, revocable
-license to install and run compiled, unmodified copies of PSKedge for
-your own personal, non-commercial amateur radio use.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-This license does not grant you any right to copy, modify, merge,
-publish, distribute, sublicense, sell, rent, lease, or create
-derivative works from PSKedge, in whole or in part, except to the
-extent such restriction is prohibited by applicable law.
+---
 
-2. SOURCE CODE AVAILABILITY
-
-The source code for PSKedge may be made available publicly (for
-example, on a public source code hosting service) for transparency
-and review purposes. Making the source code available for viewing
-does not grant any license to copy, modify, redistribute, or create
-derivative works from it. All rights not expressly granted in Section
-1 are reserved by the copyright holder.
-
-3. NO WARRANTY
-
-PSKEDGE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND
-NON-INFRINGEMENT. THE COPYRIGHT HOLDER MAKES NO REPRESENTATION OR
-WARRANTY THAT PSKEDGE WILL BE ERROR-FREE, UNINTERRUPTED, SECURE, OR
-FREE OF DEFECTS, OR THAT IT WILL MEET YOUR REQUIREMENTS.
-
-4. LIMITATION OF LIABILITY
-
-TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL
-THE COPYRIGHT HOLDER OR ANY CONTRIBUTOR BE LIABLE FOR ANY CLAIM,
-DAMAGES, OR OTHER LIABILITY OF ANY KIND WHATSOEVER - WHETHER DIRECT,
-INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY, OR
-PUNITIVE - ARISING FROM, OUT OF, OR IN CONNECTION WITH PSKEDGE OR THE
-USE OR OTHER DEALINGS IN PSKEDGE, INCLUDING BUT NOT LIMITED TO LOSS OF
-DATA, LOSS OF PROFITS, BUSINESS INTERRUPTION, DAMAGE TO OR
-MALFUNCTION OF EQUIPMENT (INCLUDING RADIO TRANSCEIVERS, ANTENNAS, AND
-COMPUTER HARDWARE), OR ANY OTHER LOSS, EVEN IF THE COPYRIGHT HOLDER
-HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES. THIS LIMITATION
-APPLIES REGARDLESS OF THE LEGAL THEORY ON WHICH THE CLAIM IS BASED
-AND EVEN IF A REMEDY SET OUT IN THIS AGREEMENT FAILS OF ITS ESSENTIAL
-PURPOSE.
-
-5. YOUR RESPONSIBILITY AS A RADIO OPERATOR
-
-PSKedge transmits and receives radio frequency signals. You are
-solely responsible for operating any transmitting equipment, and for
-using PSKedge, in accordance with the terms of your amateur radio
-license and all applicable laws and regulations in your jurisdiction,
-including but not limited to frequency allocation, power limits,
-bandwidth, and emission requirements. The copyright holder is not
-responsible for any regulatory violation, interference, equipment
-damage, or other consequence arising from your use of PSKedge to
-transmit or receive radio signals.
-
-6. NO GUARANTEE OF CONTINUED DEVELOPMENT OR SUPPORT
-
-PSKedge is experimental, beta-stage software under active
-development. The copyright holder makes no commitment to continue
-developing, maintaining, supporting, or updating PSKedge, to fix any
-defect, or to provide any assistance whatsoever, and may discontinue
-development or availability of PSKedge at any time without notice.
-
-7. TERMINATION
-
-This license is effective until terminated. It will terminate
-automatically without notice if you fail to comply with any of its
-terms. Upon termination, you must cease all use of PSKedge and
-destroy all copies in your possession.
-
-8. GENERAL
-
-If any provision of this agreement is held to be unenforceable, the
-remaining provisions will remain in full force and effect. This
-agreement constitutes the entire agreement between you and the
-copyright holder concerning PSKedge.
+Additional notice specific to this software: PSKedge transmits and
+receives amateur radio signals. You are solely responsible for
+operating any transmitting equipment, and for using this software, in
+accordance with the terms of your amateur radio license and all
+applicable laws and regulations in your jurisdiction. The authors and
+copyright holders make no guarantee of continued development,
+maintenance, or support.
