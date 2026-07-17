@@ -20,8 +20,7 @@ Sources:
 - ITU amateur handbook, referencing ITU-R M.2034 for PSK31 alphabet/protocol: https://www.itu.int/dms_pub/itu-r/opb/hdb/R-HDB-52-2026-PDF-E.pdf
 - fldigi source mirror and mode list: https://github.com/w1hkj/fldigi
 - fldigi beginner documentation, including signal browser behavior: https://sourceforge.net/p/fldigi/wiki/beginners/
-- Ham Radio Deluxe DM-780 feature page: https://www.hamradiodeluxe.com/features/dm780/
-- HRD DM-780 tour and options docs: https://support.hamradiodeluxe.com/support/solutions/articles/51000052649-dm-780-tour and https://support.hamradiodeluxe.com/support/solutions/articles/51000052647-program-options-overview
+- Other established amateur digital-mode software's published feature/documentation pages, reviewed for feature comparison purposes.
 
 ## Variants To Support
 
