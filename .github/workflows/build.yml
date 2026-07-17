@@ -76,6 +76,13 @@ jobs:
         shell: bash
         run: ${{ matrix.package }}
 
+      - name: Show NSIS log on failure
+        if: failure() && runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "Package step failed - dumping NSISOutput.log (CPack only prints its path, not its content, so failures here are otherwise undiagnosable from CI output alone):"
+          find build -iname "NSISOutput.log" -exec cat {} \;
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
