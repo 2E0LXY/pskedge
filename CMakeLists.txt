@@ -165,6 +165,24 @@ if(WIN32)
     set(CPACK_WIX_PROPERTY_ARPHELPLINK "https://github.com/2E0LXY/pskedge")
     set(CPACK_WIX_PROPERTY_ARPURLINFOABOUT "https://github.com/2E0LXY/pskedge")
 
+    # CPACK_WIX_PROGRAM_MENU_FOLDER above only names the Start Menu folder
+    # - it does not itself create any shortcut. Actually creating the
+    # Start Menu and Desktop shortcuts needs these WiX-generator-specific
+    # install properties (confirmed via CMake's own CPACK_DESKTOP_SHORTCUTS
+    # docs, which state it's "currently only supported by the CPack WIX
+    # Generator", and cross-checked against CMake's own WiX generator
+    # source rather than assumed from the variable name alone). The
+    # install-relative path must match install(TARGETS pskedge RUNTIME
+    # DESTINATION bin) below.
+    set_property(
+        INSTALL "bin/$<TARGET_FILE_NAME:pskedge>"
+        PROPERTY CPACK_START_MENU_SHORTCUTS "PSKedge"
+    )
+    set_property(
+        INSTALL "bin/$<TARGET_FILE_NAME:pskedge>"
+        PROPERTY CPACK_DESKTOP_SHORTCUTS "PSKedge"
+    )
+
     # Upgrade GUID must stay IDENTICAL across every future release - it's
     # how Windows Installer recognises "this is an update to an existing
     # install" rather than a conflicting parallel install. Generated once
