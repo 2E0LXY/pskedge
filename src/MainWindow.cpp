@@ -179,14 +179,13 @@ QWidget *MainWindow::buildTopBar()
     auto *outerLayout = new QHBoxLayout(bar);
     outerLayout->setContentsMargins(4, 4, 4, 4);
 
-    // --- Left: Setup button + band buttons, arranged in equal rows ---
+    // --- Left: band buttons, arranged in rows. Setup lives in the File
+    // menu (added in the constructor) rather than as a button here - a
+    // standalone button duplicating that menu action was removed per
+    // explicit request.
     auto *leftColumn = new QWidget(this);
     auto *leftLayout = new QVBoxLayout(leftColumn);
     leftLayout->setContentsMargins(0, 0, 0, 0);
-
-    auto *setup = new QPushButton("Setup", this);
-    connect(setup, &QPushButton::clicked, this, &MainWindow::openSettings);
-    leftLayout->addWidget(setup);
 
     const QStringList bands = {"160m", "80m", "40m", "30m", "20m", "17m", "15m", "12m", "10m", "6m"};
     constexpr int kGridRows = 5; // both grids target this many rows so the
