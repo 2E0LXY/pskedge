@@ -25,8 +25,17 @@ int main(int argc, char *argv[])
     QSplashScreen *splash = nullptr;
     const QString splashPath = QDir(QCoreApplication::applicationDirPath()).filePath("assets/splash.png");
     if (QFile::exists(splashPath)) {
-        const QPixmap splashPixmap(splashPath);
+        QPixmap splashPixmap(splashPath);
         if (!splashPixmap.isNull()) {
+            // The shipped splash.png is a full marketing-size graphic
+            // (1672x941) - shown at native resolution it would dominate
+            // most screens. Scale to a conventional splash-screen width,
+            // preserving aspect ratio, rather than assuming the source
+            // image is already splash-sized.
+            constexpr int kMaxSplashWidth = 640;
+            if (splashPixmap.width() > kMaxSplashWidth) {
+                splashPixmap = splashPixmap.scaledToWidth(kMaxSplashWidth, Qt::SmoothTransformation);
+            }
             splash = new QSplashScreen(splashPixmap);
             splash->show();
             app.processEvents();

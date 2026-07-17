@@ -518,20 +518,25 @@ void MainWindow::handleCatStatus(const QString &status)
     }
 }
 
+void MainWindow::applyDisplayedFrequency(double frequencyHz)
+{
+    m_catFrequencyHz = frequencyHz;
+    if (m_vfoLabel) {
+        m_vfoLabel->setText(QString("%1 MHz").arg(frequencyHz / 1000000.0, 0, 'f', 6));
+    }
+    m_liveRxLine.metrics.rfFrequencyMhz = (frequencyHz + m_liveRxLine.metrics.audioFrequencyHz) / 1000000.0;
+    if (m_selectedLine.metrics.audioFrequencyHz > 0.0) {
+        m_selectedLine.metrics.rfFrequencyMhz = (frequencyHz + m_selectedLine.metrics.audioFrequencyHz) / 1000000.0;
+    }
+}
+
 void MainWindow::handleCatSnapshot(const CatSnapshot &snapshot)
 {
     if (!snapshot.connected) {
         return;
     }
 
-    m_catFrequencyHz = snapshot.frequencyHz;
-    if (m_vfoLabel) {
-        m_vfoLabel->setText(QString("%1 MHz").arg(snapshot.frequencyHz / 1000000.0, 0, 'f', 6));
-    }
-    m_liveRxLine.metrics.rfFrequencyMhz = (snapshot.frequencyHz + m_liveRxLine.metrics.audioFrequencyHz) / 1000000.0;
-    if (m_selectedLine.metrics.audioFrequencyHz > 0.0) {
-        m_selectedLine.metrics.rfFrequencyMhz = (snapshot.frequencyHz + m_selectedLine.metrics.audioFrequencyHz) / 1000000.0;
-    }
+    applyDisplayedFrequency(snapshot.frequencyHz);
 }
 
 void MainWindow::handleBandChanged(const QString &band)
@@ -578,6 +583,15 @@ void MainWindow::handleCatFrequencyResult(bool ok, double frequencyHz)
             4000);
         return;
     }
+
+    // Update the display immediately rather than waiting for the next
+    // poll-based snapshot to catch up - CAT successfully retuning the
+    // radio (confirmed by this callback firing with ok=true) previously
+    // had no effect on the on-screen VFO frequency until whatever poll
+    // cycle happened to come next, which could lag visibly or - if
+    // polling wasn't behaving for some reason - never actually update the
+    // display at all, despite the radio itself having retuned correctly.
+    applyDisplayedFrequency(frequencyHz);
 
     statusBar()->showMessage(
         band.isEmpty()

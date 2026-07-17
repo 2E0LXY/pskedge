@@ -65,6 +65,7 @@ private:
     void loadSettings();
     void saveSettings() const;
     void updateStatusLabels();
+    void applyDisplayedFrequency(double frequencyHz);
     QWidget *buildTopBar();
     QWidget *buildRightPanel();
     QWidget *buildWorkflowPanel();
