@@ -72,7 +72,6 @@ private:
     QWidget *buildTopBar();
     QWidget *buildRightPanel();
     QWidget *buildWorkflowPanel();
-    QWidget *buildSelectedQsoPanel();
     QWidget *buildTxPanel();
     QWidget *buildRxTranscriptPanel();
     void configureTable(QTableView *view);

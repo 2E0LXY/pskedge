@@ -52,7 +52,7 @@ MainWindow::MainWindow(QWidget *parent)
 {
     loadSettings();
 
-    setWindowTitle("PSKedge v0.4.0 beta");
+    setWindowTitle("PSKedge v0.4.1 beta");
     resize(1480, 900);
 
     auto *settingsAction = new QAction("Setup", this);
@@ -143,7 +143,7 @@ MainWindow::MainWindow(QWidget *parent)
     // below the waterfall/decoders row per explicit request) so the
     // operator sees what's selected right next to the tuning display,
     // and the waterfall/decoders row gets the freed-up vertical space.
-    mainLayout->addWidget(buildSelectedQsoPanel());
+    // Selected QSO moved into the top bar (beside AFC) - see buildTopBar().
 
     // RX transcript and the TX composer stay visible at all times - an
     // operator mid-QSO should never lose the composer just because they
@@ -315,6 +315,12 @@ QWidget *MainWindow::buildTopBar()
     auto *afcRow = new QHBoxLayout();
     afcRow->addStretch();
     afcRow->addWidget(m_afcButton);
+    m_qsoCallLabel = new QLabel("Call: none", this);
+    m_qsoFreqLabel = new QLabel("RF: --   Audio: --", this);
+    m_qsoSignalLabel = new QLabel("SNR: --   Q: --   IMD: --", this);
+    afcRow->addWidget(m_qsoCallLabel);
+    afcRow->addWidget(m_qsoFreqLabel);
+    afcRow->addWidget(m_qsoSignalLabel);
     afcRow->addStretch();
     centerLayout->addLayout(afcRow);
     centerLayout->addStretch();
@@ -446,22 +452,6 @@ QWidget *MainWindow::buildRxTranscriptPanel()
         "Real demodulated audio appears here. Click the waterfall to tune the RX offset, "
         "or enable AFC to track a locked signal automatically.");
     layout->addWidget(m_rxTranscript);
-    return box;
-}
-
-QWidget *MainWindow::buildSelectedQsoPanel()
-{
-    auto *box = new QGroupBox("Selected QSO", this);
-    auto *layout = new QHBoxLayout(box);
-
-    m_qsoCallLabel = new QLabel("Call: none", this);
-    m_qsoFreqLabel = new QLabel("RF: --   Audio: --", this);
-    m_qsoSignalLabel = new QLabel("SNR: --   Q: --   IMD: --", this);
-
-    layout->addWidget(m_qsoCallLabel);
-    layout->addWidget(m_qsoFreqLabel);
-    layout->addWidget(m_qsoSignalLabel);
-    layout->addStretch();
     return box;
 }
 
