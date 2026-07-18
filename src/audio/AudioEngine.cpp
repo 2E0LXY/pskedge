@@ -95,6 +95,25 @@ void AudioEngine::setAfcEnabled(bool enabled)
     m_afcEnabled = enabled;
 }
 
+void AudioEngine::setMode(OperatingMode mode)
+{
+    if (m_mode == mode) {
+        return;
+    }
+    m_mode = mode;
+    // Same reasoning as setRxTargetHz(): switching modes invalidates
+    // in-flight demodulator state, which is specific to whichever
+    // codec was tracking it.
+    m_rxSamples.clear();
+    m_rxLastDecoded.clear();
+    m_rxDemodPending = false;
+}
+
+AudioEngine::OperatingMode AudioEngine::mode() const
+{
+    return m_mode;
+}
+
 void AudioEngine::setRxTargetHz(double audioHz)
 {
     m_rxTargetHz = audioHz;
@@ -140,13 +159,22 @@ bool AudioEngine::transmitBpsk31(const QString &text, double audioHz)
     }
 
 
-    psk::dsp::Bpsk31Config config;
-    config.sampleRate = format.sampleRate();
-    config.carrierHz = std::clamp(audioHz, 300.0, 3000.0);
-    config.amplitude = 0.55;
-
-    psk::dsp::Bpsk31Codec codec(config);
-    const std::vector<double> samples = codec.modulateText(text.toStdString());
+    std::vector<double> samples;
+    if (m_mode == OperatingMode::Cw) {
+        psk::dsp::CwConfig cwConfig;
+        cwConfig.sampleRate = format.sampleRate();
+        cwConfig.toneHz = std::clamp(audioHz, 300.0, 3000.0);
+        cwConfig.wpm = 18.0; // standard, unhurried hand-sending speed - not yet operator-configurable
+        const psk::dsp::CwCodec cwCodec(cwConfig);
+        samples = cwCodec.modulateText(text.toStdString());
+    } else {
+        psk::dsp::Bpsk31Config config;
+        config.sampleRate = format.sampleRate();
+        config.carrierHz = std::clamp(audioHz, 300.0, 3000.0);
+        config.amplitude = 0.55;
+        const psk::dsp::Bpsk31Codec codec(config);
+        samples = codec.modulateText(text.toStdString());
+    }
     m_txSamples = samples;
     m_txSampleRate = format.sampleRate();
 
@@ -163,7 +191,10 @@ bool AudioEngine::transmitBpsk31(const QString &text, double audioHz)
     m_sink->start(m_txBuffer);
     m_txLevelTimer.start();
     emit txStarted();
-    emit statusChanged(QString("TX audio: %1 BPSK31 at %2 Hz").arg(output.description()).arg(config.carrierHz, 0, 'f', 0));
+    emit statusChanged(QString("TX audio: %1 %2 at %3 Hz")
+                            .arg(output.description())
+                            .arg(m_mode == OperatingMode::Cw ? "CW" : "BPSK31")
+                            .arg(std::clamp(audioHz, 300.0, 3000.0), 0, 'f', 0));
     return true;
 }
 
@@ -317,36 +348,59 @@ void AudioEngine::runRxDemodulator()
     }
     m_rxDemodPending = false;
 
-    psk::dsp::Bpsk31Config config;
-    config.sampleRate = m_rxSampleRate;
-    config.carrierHz = m_rxTargetHz;
-
-    // Costas carrier PLL + Gardner symbol-timing recovery + 5-hypothesis
-    // frequency acquisition (validated envelope: +/-10Hz carrier offset,
-    // +/-0.1% clock drift - see Bpsk31Codec.cpp). Still not a fully robust
-    // receiver against real off-air noise/QRM - see IMPROVEMENTS.md - but
-    // genuinely tracks moderate real-world impairments now, not just a
-    // perfectly aligned loopback.
-    const psk::dsp::Bpsk31Codec codec(config);
     std::string decoded;
-    if (m_afcEnabled) {
-        const psk::dsp::Bpsk31DemodResult result = codec.demodulateTextWithLock(m_rxSamples);
-        decoded = result.text;
-        // Only trust a genuine lock (see Bpsk31DemodResult::hasLock) to
-        // move the target - nudging based on whichever hypothesis merely
-        // scored highest on noise would walk the target frequency around
-        // randomly with nothing actually being received, which is worse
-        // than staying put.
-        if (result.hasLock && std::abs(result.lockedOffsetHz) > 0.01) {
-            m_rxTargetHz = std::clamp(m_rxTargetHz + result.lockedOffsetHz, 300.0, 3000.0);
-            emit rxTargetHzChanged(m_rxTargetHz);
-        }
+    double snrDb = 0.0;
+    double signalLevelDb = 0.0;
+    double noiseFloorDb = 0.0;
+
+    if (m_mode == OperatingMode::Cw) {
+        // No AFC/acquisition-offset tracking for CW yet - CwCodec's
+        // envelope detector doesn't track carrier phase the way the
+        // Costas loop does, so there's no equivalent "locked offset" to
+        // report. The operator needs to be reasonably close to the
+        // actual tone, same as BPSK31 with AFC off.
+        psk::dsp::CwConfig cwConfig;
+        cwConfig.sampleRate = m_rxSampleRate;
+        cwConfig.toneHz = m_rxTargetHz;
+        const psk::dsp::CwCodec cwCodec(cwConfig);
+        decoded = cwCodec.demodulateText(m_rxSamples);
+        // CW has no equivalent to Bpsk31Codec::measureSignalQuality yet -
+        // left at 0 rather than fabricating a reading for a measurement
+        // that doesn't exist for this mode.
     } else {
-        decoded = codec.demodulateText(m_rxSamples);
+        psk::dsp::Bpsk31Config config;
+        config.sampleRate = m_rxSampleRate;
+        config.carrierHz = m_rxTargetHz;
+
+        // Costas carrier PLL + Gardner symbol-timing recovery + 5-hypothesis
+        // frequency acquisition (validated envelope: +/-10Hz carrier offset,
+        // +/-0.1% clock drift - see Bpsk31Codec.cpp). Still not a fully robust
+        // receiver against real off-air noise/QRM - see IMPROVEMENTS.md - but
+        // genuinely tracks moderate real-world impairments now, not just a
+        // perfectly aligned loopback.
+        const psk::dsp::Bpsk31Codec codec(config);
+        if (m_afcEnabled) {
+            const psk::dsp::Bpsk31DemodResult result = codec.demodulateTextWithLock(m_rxSamples);
+            decoded = result.text;
+            // Only trust a genuine lock (see Bpsk31DemodResult::hasLock) to
+            // move the target - nudging based on whichever hypothesis merely
+            // scored highest on noise would walk the target frequency around
+            // randomly with nothing actually being received, which is worse
+            // than staying put.
+            if (result.hasLock && std::abs(result.lockedOffsetHz) > 0.01) {
+                m_rxTargetHz = std::clamp(m_rxTargetHz + result.lockedOffsetHz, 300.0, 3000.0);
+                emit rxTargetHzChanged(m_rxTargetHz);
+            }
+        } else {
+            decoded = codec.demodulateText(m_rxSamples);
+        }
+        const psk::dsp::Bpsk31SignalQuality quality = codec.measureSignalQuality(m_rxSamples);
+        snrDb = quality.snrDb;
+        signalLevelDb = quality.signalLevelDb;
+        noiseFloorDb = quality.noiseFloorDb;
     }
 
-    const psk::dsp::Bpsk31SignalQuality quality = codec.measureSignalQuality(m_rxSamples);
-    emit rxSignalQuality(quality.snrDb, quality.signalLevelDb, quality.noiseFloorDb);
+    emit rxSignalQuality(snrDb, signalLevelDb, noiseFloorDb);
 
     if (decoded != m_rxLastDecoded) {
         m_rxLastDecoded = decoded;

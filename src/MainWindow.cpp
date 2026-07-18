@@ -5,6 +5,7 @@
 #include "WaterfallWidget.h"
 
 #include <QAction>
+#include <QActionGroup>
 #include <QAbstractItemView>
 #include <QApplication>
 #include <QButtonGroup>
@@ -52,12 +53,32 @@ MainWindow::MainWindow(QWidget *parent)
 {
     loadSettings();
 
-    setWindowTitle("PSKedge v0.5.2 beta");
+    setWindowTitle("PSKedge v0.5.3 beta");
     resize(1480, 900);
 
     auto *settingsAction = new QAction("Setup", this);
     connect(settingsAction, &QAction::triggered, this, &MainWindow::openSettings);
     menuBar()->addMenu("File")->addAction(settingsAction);
+
+    // Only two real, working modes - the button grid that used to list
+    // ~18 modes (only BPSK31 of which ever actually decoded anything)
+    // was removed per explicit request rather than kept implying
+    // capability that didn't exist. CW is new and real, not a
+    // placeholder - see AudioEngine::OperatingMode and CwCodec.
+    auto *modesMenu = menuBar()->addMenu("Modes");
+    auto *modeGroup = new QActionGroup(this);
+    modeGroup->setExclusive(true);
+    m_psk31ModeAction = new QAction("PSK31", this);
+    m_psk31ModeAction->setCheckable(true);
+    m_psk31ModeAction->setChecked(true);
+    m_cwModeAction = new QAction("CW", this);
+    m_cwModeAction->setCheckable(true);
+    modeGroup->addAction(m_psk31ModeAction);
+    modeGroup->addAction(m_cwModeAction);
+    modesMenu->addAction(m_psk31ModeAction);
+    modesMenu->addAction(m_cwModeAction);
+    connect(m_psk31ModeAction, &QAction::triggered, this, [this]() { handleModeChanged(false); });
+    connect(m_cwModeAction, &QAction::triggered, this, [this]() { handleModeChanged(true); });
 
     m_activeModel = new DecoderTableModel(DecoderTableModel::Mode::ActiveDecoders, this);
     m_sweeperModel = new DecoderTableModel(DecoderTableModel::Mode::SweeperCandidates, this);
@@ -229,8 +250,8 @@ MainWindow::MainWindow(QWidget *parent)
     // the LEFT of the status bar, which is where this belongs now - moved
     // out of the top bar, which was getting crowded with the new band/mode
     // button grids either side of the frequency display.
-    auto *modeStatus = new QLabel("BW: 60 Hz   RX   TX/RX Locked", this);
-    statusBar()->addWidget(modeStatus);
+    m_modeStatusLabel = new QLabel("BW: 60 Hz   RX   TX/RX Locked", this);
+    statusBar()->addWidget(m_modeStatusLabel);
 
     m_audioEngine->startRx();
     if (m_config.cat.autoConnect) {
@@ -345,38 +366,6 @@ QWidget *MainWindow::buildTopBar()
     centerLayout->addStretch();
     outerLayout->addWidget(centerColumn, 1);
 
-    // --- Right: mode buttons, arranged in equal rows ---
-    // Roadmap of modes to implement (curated to modes still in real use -
-    // see FEATURE_ROADMAP.md) - only BPSK31 is actually decodable today;
-    // selecting anything else does not change what this app can send or
-    // receive yet. Button labels show just the mode name (not the full
-    // "Category / Name" string) so 18 buttons stay a readable width in a
-    // grid - the full name is still in the tooltip.
-    const QStringList modes = {
-        "PSK / BPSK31",
-        "PSK / BPSK63",
-        "PSK / BPSK125",
-        "QPSK / QPSK31",
-        "QPSK / QPSK63",
-        "QPSK / QPSK125",
-        "RTTY / RTTY (FSK)",
-        "RTTY / RTTY (AFSK)",
-        "CW / CW",
-        "MFSK / MFSK8",
-        "MFSK / MFSK16",
-        "Olivia / OLIVIA-8-250",
-        "Olivia / OLIVIA-16-500",
-        "Olivia / OLIVIA-32-1000",
-        "Hell / Feld Hell",
-        "SSTV / Martin 1",
-        "SSTV / Scottie 1",
-        "SSTV / Robot 36"
-    };
-    const QString modeTooltipSuffix =
-        " - roadmap of modes to implement (see FEATURE_ROADMAP.md); only BPSK31 is "
-        "actually decodable today, selecting anything else does not change what this "
-        "app can send or receive yet";
-
     auto *rightMeters = new QWidget(this);
     auto *rightMetersLayout = new QVBoxLayout(rightMeters);
     rightMetersLayout->setContentsMargins(6, 0, 6, 0);
@@ -387,30 +376,6 @@ QWidget *MainWindow::buildTopBar()
     rightMetersLayout->addWidget(m_txLevelMeter);
     rightMetersLayout->addStretch();
     outerLayout->addWidget(rightMeters);
-
-    auto *rightColumn = new QWidget(this);
-    auto *rightLayout = new QVBoxLayout(rightColumn);
-    rightLayout->setContentsMargins(0, 0, 0, 0);
-
-    auto *modeGrid = new QGridLayout();
-    modeGrid->setSpacing(2);
-    auto *modeGroup = new QButtonGroup(this);
-    constexpr int kModeRows = 3; // ceil(18 / 6) - fewer rows (was 5) to reduce top-bar height
-    for (int i = 0; i < modes.size(); ++i) {
-        const QString fullName = modes[i];
-        const QString shortName = fullName.section('/', 1).trimmed();
-        auto *btn = new QPushButton(shortName, this);
-        btn->setCheckable(true);
-        btn->setToolTip(fullName + modeTooltipSuffix);
-        modeGroup->addButton(btn);
-        if (fullName == "PSK / BPSK31") {
-            btn->setChecked(true);
-        }
-        modeGrid->addWidget(btn, i % kModeRows, i / kModeRows);
-    }
-    rightLayout->addLayout(modeGrid);
-    rightLayout->addStretch();
-    outerLayout->addWidget(rightColumn);
 
     return bar;
 }
@@ -561,6 +526,23 @@ void MainWindow::handleSweeperClick(const QModelIndex &index)
     line.callsign = extractCallsign(line.text, line.callsign);
     prepareReply(line);
     m_activeModel->addOrUpdate(line);
+}
+
+void MainWindow::handleModeChanged(bool cwSelected)
+{
+    if (!m_audioEngine) {
+        return;
+    }
+    m_audioEngine->setMode(cwSelected ? AudioEngine::OperatingMode::Cw : AudioEngine::OperatingMode::Bpsk31);
+    if (m_modeStatusLabel) {
+        // CW's occupied bandwidth is a function of keying speed, not a
+        // fixed figure the way PSK31's is (a spec-defined ~60Hz for its
+        // raised-cosine-shaped symbol rate) - "narrow" is honest without
+        // implying a specific measured number that doesn't exist yet.
+        m_modeStatusLabel->setText(cwSelected ? "BW: narrow (CW)   RX   TX/RX Locked"
+                                               : "BW: 60 Hz   RX   TX/RX Locked");
+    }
+    statusBar()->showMessage(cwSelected ? "Mode: CW" : "Mode: PSK31", 3000);
 }
 
 void MainWindow::handleAfcTargetChanged(double audioHz)

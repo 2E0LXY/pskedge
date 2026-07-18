@@ -9,6 +9,7 @@
 #include "cat/CatController.h"
 #include "remote/RemoteControlServer.h"
 
+#include <QAction>
 #include <QLabel>
 #include <QMainWindow>
 #include <QPlainTextEdit>
@@ -46,6 +47,7 @@ private slots:
     void handleSweeperClick(const QModelIndex &index);
     void handleWaterfallClick(double audioHz);
     void handleAfcTargetChanged(double audioHz);
+    void handleModeChanged(bool cwSelected);
     void handleRemoteMacro(const QString &text);
     void handleRemoteTxText(const QString &text);
     void broadcastRemoteState();
@@ -93,6 +95,9 @@ private:
     LevelMeter *m_rxLevelMeter = nullptr;
     LevelMeter *m_txLevelMeter = nullptr;
     QPushButton *m_afcButton = nullptr;
+    QAction *m_psk31ModeAction = nullptr;
+    QAction *m_cwModeAction = nullptr;
+    QLabel *m_modeStatusLabel = nullptr;
     RemoteControlServer *m_remoteServer = nullptr;
     QTimer m_remoteStateTimer;
     QString m_currentBand = "20m";

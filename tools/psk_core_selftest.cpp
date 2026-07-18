@@ -2,6 +2,7 @@
 #include "dsp/Bpsk31Codec.h"
 #include "dsp/ConvCode.h"
 #include "dsp/Crc16.h"
+#include "dsp/CwCodec.h"
 #include "dsp/PskVaricode.h"
 
 #include <cmath>
@@ -326,6 +327,60 @@ bool checkBlockSyncOffsetAcquisition(std::string *error)
     return true;
 }
 
+bool checkCwCodecRoundTrip(std::string *error)
+{
+    const std::string message = "CQ CQ DE 2E0LXY 2E0LXY K THE QUICK BROWN FOX 73";
+
+    // Multiple WPM speeds with added noise - the decoder estimates WPM
+    // adaptively from the signal itself (see CwCodec::demodulateText), so
+    // this genuinely exercises that estimation across a real speed range,
+    // not just a single hardcoded rate.
+    for (double wpm : {12.0, 18.0, 25.0, 35.0}) {
+        psk::dsp::CwConfig txConfig;
+        txConfig.wpm = wpm;
+        const psk::dsp::CwCodec txCodec(txConfig);
+        std::vector<double> samples = txCodec.modulateText(message);
+
+        std::mt19937 rng(static_cast<unsigned>(wpm * 100));
+        std::normal_distribution<double> noise(0.0, 0.15);
+        for (double &s : samples) {
+            s += noise(rng);
+        }
+
+        const psk::dsp::CwCodec rxCodec;
+        const std::string decoded = rxCodec.demodulateText(samples);
+        if (decoded.find(message) == std::string::npos) {
+            if (error) {
+                *error = "CwCodec round-trip failed at " + std::to_string(wpm) + " WPM (decoded: \"" + decoded + "\")";
+            }
+            return false;
+        }
+    }
+
+    // Noise rejection: pure noise must decode to nothing, not a
+    // confident-looking fabrication - see the contrast-gate and
+    // short-word sanity-check comments in CwCodec.cpp for what this
+    // guards against (both were added after this specific failure mode
+    // was found during development: 3s of Gaussian noise alone decoding
+    // to 140+ characters of plausible-looking garbage).
+    std::mt19937 noiseRng(99);
+    std::normal_distribution<double> pureNoise(0.0, 0.3);
+    std::vector<double> noiseOnly(8000 * 3);
+    for (double &s : noiseOnly) {
+        s = pureNoise(noiseRng);
+    }
+    const psk::dsp::CwCodec rxCodec;
+    const std::string noiseDecoded = rxCodec.demodulateText(noiseOnly);
+    if (!noiseDecoded.empty()) {
+        if (error) {
+            *error = "CwCodec decoded pure noise as text instead of returning empty: \"" + noiseDecoded + "\"";
+        }
+        return false;
+    }
+
+    return true;
+}
+
 } // namespace
 
 int main()
@@ -392,6 +447,11 @@ int main()
     if (!checkBlockSyncOffsetAcquisition(&error)) {
         std::cerr << "BlockSyncCodec offset acquisition check failed: " << error << '\n';
         return 10;
+    }
+
+    if (!checkCwCodecRoundTrip(&error)) {
+        std::cerr << "CwCodec check failed: " << error << '\n';
+        return 11;
     }
 
     std::cout << "PSK core self-test passed\n";

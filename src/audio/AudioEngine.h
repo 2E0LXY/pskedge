@@ -1,6 +1,7 @@
 #pragma once
 
 #include "dsp/Bpsk31Codec.h"
+#include "dsp/CwCodec.h"
 
 #include <QAudioDevice>
 #include <QAudioFormat>
@@ -22,10 +23,18 @@ class AudioEngine : public QObject {
     Q_OBJECT
 
 public:
+    // Only two real, working modes - everything else the UI ever
+    // referenced was a roadmap placeholder that never actually decoded
+    // (see FEATURE_ROADMAP.md history), removed per explicit request
+    // rather than left implying capability that didn't exist.
+    enum class OperatingMode { Bpsk31, Cw };
+
     explicit AudioEngine(QObject *parent = nullptr);
     ~AudioEngine() override;
 
     void setDevices(const QString &rxInputDeviceId, const QString &txOutputDeviceId);
+    void setMode(OperatingMode mode);
+    OperatingMode mode() const;
     bool startRx();
     void stopRx();
     bool transmitBpsk31(const QString &text, double audioHz);
@@ -99,6 +108,7 @@ private:
 
     double m_rxTargetHz = 1000.0;
     bool m_afcEnabled = false;
+    OperatingMode m_mode = OperatingMode::Bpsk31;
     double m_rxSampleRate = 8000.0;
     int m_rxChannelCount = 1;
     std::vector<double> m_rxSamples;
