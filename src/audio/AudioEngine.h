@@ -36,6 +36,16 @@ public:
     // actual audio offset; there is no AFC/frequency search yet.
     void setRxTargetHz(double audioHz);
 
+    // When enabled, a genuine hypothesis lock (see
+    // Bpsk31Codec::demodulateTextWithLock - only a real lock, not a
+    // marginal noise-coincidence score, updates the target) nudges the RX
+    // target frequency toward whatever the signal was actually measured
+    // at, so a drifting or slightly-mistuned signal is tracked over
+    // successive demod cycles instead of requiring the operator to
+    // re-click the waterfall. Off by default - manual tuning stays exact
+    // and predictable unless the operator opts in.
+    void setAfcEnabled(bool enabled);
+
 signals:
     void statusChanged(const QString &status);
     void rxLevelChanged(double rms, double peak);
@@ -48,6 +58,10 @@ signals:
     // for what this is and isn't measuring.
     void rxSignalQuality(double snrDb, double signalLevelDb, double noiseFloorDb);
     void rxSpectrumReady(const QVector<double> &levels);
+    // Emitted only when AFC (see setAfcEnabled) actually moves the RX
+    // target - not on every demod cycle, and not for manual
+    // setRxTargetHz() calls (the caller already knows that value).
+    void rxTargetHzChanged(double audioHz);
     void txStarted();
     void txFinished();
     // Polled from the sample buffer at the sink's actual playback
@@ -84,6 +98,7 @@ private:
     QTimer m_txLevelTimer;
 
     double m_rxTargetHz = 1000.0;
+    bool m_afcEnabled = false;
     double m_rxSampleRate = 8000.0;
     int m_rxChannelCount = 1;
     std::vector<double> m_rxSamples;

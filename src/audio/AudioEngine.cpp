@@ -101,6 +101,11 @@ void AudioEngine::setRxTargetHz(double audioHz)
     m_rxDemodPending = false;
 }
 
+void AudioEngine::setAfcEnabled(bool enabled)
+{
+    m_afcEnabled = enabled;
+}
+
 void AudioEngine::stopRx()
 {
     m_rxDemodTimer.stop();
@@ -323,7 +328,22 @@ void AudioEngine::runRxDemodulator()
     // genuinely tracks moderate real-world impairments now, not just a
     // perfectly aligned loopback.
     const psk::dsp::Bpsk31Codec codec(config);
-    const std::string decoded = codec.demodulateText(m_rxSamples);
+    std::string decoded;
+    if (m_afcEnabled) {
+        const psk::dsp::Bpsk31DemodResult result = codec.demodulateTextWithLock(m_rxSamples);
+        decoded = result.text;
+        // Only trust a genuine lock (see Bpsk31DemodResult::hasLock) to
+        // move the target - nudging based on whichever hypothesis merely
+        // scored highest on noise would walk the target frequency around
+        // randomly with nothing actually being received, which is worse
+        // than staying put.
+        if (result.hasLock && std::abs(result.lockedOffsetHz) > 0.01) {
+            m_rxTargetHz = std::clamp(m_rxTargetHz + result.lockedOffsetHz, 300.0, 3000.0);
+            emit rxTargetHzChanged(m_rxTargetHz);
+        }
+    } else {
+        decoded = codec.demodulateText(m_rxSamples);
+    }
 
     const psk::dsp::Bpsk31SignalQuality quality = codec.measureSignalQuality(m_rxSamples);
     emit rxSignalQuality(quality.snrDb, quality.signalLevelDb, quality.noiseFloorDb);

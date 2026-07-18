@@ -43,6 +43,7 @@ private slots:
     void handleActiveDecodeClick(const QModelIndex &index);
     void handleSweeperClick(const QModelIndex &index);
     void handleWaterfallClick(double audioHz);
+    void handleAfcTargetChanged(double audioHz);
     void openSettings();
     void insertMacro(const QString &macroText);
     void transmitComposer();
@@ -87,6 +88,7 @@ private:
     LevelMeter *m_qualityMeter = nullptr;
     LevelMeter *m_rxLevelMeter = nullptr;
     LevelMeter *m_txLevelMeter = nullptr;
+    QPushButton *m_afcButton = nullptr;
     QTableView *m_activeView = nullptr;
     QTableView *m_sweeperView = nullptr;
     QPlainTextEdit *m_txText = nullptr;

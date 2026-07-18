@@ -331,6 +331,11 @@ double Bpsk31Codec::scoreDecodedBits(const std::vector<int> &bits) const
 
 std::vector<int> Bpsk31Codec::demodulateBits(const std::vector<double> &samples) const
 {
+    return demodulateBitsAndOffset(samples).first;
+}
+
+std::pair<std::vector<int>, double> Bpsk31Codec::demodulateBitsAndOffset(const std::vector<double> &samples) const
+{
     // Wideband acquisition: a single Costas hypothesis has a hard pull-in
     // ceiling (~+/-7Hz here - see the envelope comment above) because
     // per-symbol carrier rotation beyond ~90 degrees is ambiguous to a
@@ -354,20 +359,41 @@ std::vector<int> Bpsk31Codec::demodulateBits(const std::vector<double> &samples)
 
     std::vector<int> best;
     double bestScore = -1.0;
+    double bestOffsetHz = 0.0;
     for (const double offsetHz : kHypothesisOffsetsHz) {
         std::vector<int> candidate = trackWithOffset(samples, offsetHz);
         const double score = scoreDecodedBits(candidate);
         if (score > bestScore) {
             bestScore = score;
             best = std::move(candidate);
+            bestOffsetHz = offsetHz;
         }
     }
-    return best;
+    return {std::move(best), bestOffsetHz};
 }
 
 std::string Bpsk31Codec::demodulateText(const std::vector<double> &samples) const
 {
     return PskVaricode::decodeTextBits(demodulateBits(samples));
+}
+
+Bpsk31DemodResult Bpsk31Codec::demodulateTextWithLock(const std::vector<double> &samples) const
+{
+    const auto [bits, offsetHz] = demodulateBitsAndOffset(samples);
+    Bpsk31DemodResult result;
+    result.text = PskVaricode::decodeTextBits(bits);
+    result.lockedOffsetHz = offsetHz;
+    // scoreDecodedBits() returns close to 1.0 for a genuine lock
+    // (preamble nearly all zero bits AND payload shows real variation,
+    // not a degenerate stuck pattern - see that function's comment) and
+    // is penalised by 10x if the payload looks fake, which reliably pulls
+    // even a high preamble-only score well under this threshold. 0.8 is
+    // a conservative cut some way below a clean lock's typical score and
+    // well above what a penalised fake lock can reach, not a value swept
+    // against a validation set - flagged as a reasoned choice, not a
+    // calibrated one.
+    result.hasLock = scoreDecodedBits(bits) > 0.8;
+    return result;
 }
 
 Bpsk31SignalQuality Bpsk31Codec::measureSignalQuality(const std::vector<double> &samples) const

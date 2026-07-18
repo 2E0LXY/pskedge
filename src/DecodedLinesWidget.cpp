@@ -20,18 +20,21 @@ void DecodedLinesWidget::paintEvent(QPaintEvent *)
     QPainter painter(this);
     painter.fillRect(rect(), QColor(0, 0, 0));
 
+    // Frequency reference lines only - same yForAudio() formula as
+    // WaterfallWidget, so a line here sits at the same vertical position
+    // as the matching frequency in the waterfall (given both widgets
+    // also share the same content-area height and top offset - see
+    // MainWindow::buildRightPanel(), which no longer wraps this widget
+    // in its own titled group box for exactly that reason). Previously
+    // this also drew a second, entirely separate "channel row 1-16"
+    // grid using height()/17 spacing that had no relationship to
+    // frequency at all - purely decorative, and the reason nothing
+    // ever visually lined up between this widget and the waterfall.
     painter.setPen(QColor(38, 72, 86));
     for (int i = 0; i <= 9; ++i) {
         const double hz = 300.0 + i * 300.0;
         const int y = yForAudio(hz);
         painter.drawLine(0, y, width(), y);
-    }
-
-    painter.setPen(QColor(55, 84, 94));
-    for (int ch = 1; ch <= 16; ++ch) {
-        const int y = (ch * height()) / 17;
-        painter.drawText(6, y + 4, QString::number(ch));
-        painter.drawLine(34, y, width(), y);
     }
 
     for (const DecodeLine &line : m_lines) {
@@ -71,8 +74,8 @@ QRect DecodedLinesWidget::barRectForLine(const DecodeLine &line) const
 {
     const int y = yForAudio(line.metrics.audioFrequencyHz);
     const int barHeight = 18;
-    return QRect(42, qBound(0, y - barHeight / 2, qMax(0, height() - barHeight)),
-                 qMax(20, width() - 48), barHeight);
+    return QRect(8, qBound(0, y - barHeight / 2, qMax(0, height() - barHeight)),
+                 qMax(20, width() - 14), barHeight);
 }
 
 QString DecodedLinesWidget::displayText(const DecodeLine &line) const

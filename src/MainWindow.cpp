@@ -35,6 +35,18 @@
 #include <algorithm>
 #include <cmath>
 
+namespace {
+// Both the waterfall and the Active Decoders panel need headers of
+// exactly this height so their frequency-mapped content widgets start
+// at the same Y coordinate - see MainWindow::buildTopBar()'s waterfall
+// column and buildRightPanel(), which both use this rather than a
+// QGroupBox's native title (whose exact height isn't guaranteed to
+// match a plain QLabel's, which was part of why these two widgets never
+// visually lined up despite using the same underlying frequency-to-Y
+// formula).
+constexpr int kPanelHeaderHeight = 22;
+}
+
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
@@ -80,6 +92,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_audioEngine, &AudioEngine::rxTextDecoded, this, &MainWindow::handleRxTextDecoded);
     connect(m_audioEngine, &AudioEngine::rxSignalQuality, this, &MainWindow::handleRxSignalQuality);
     connect(m_audioEngine, &AudioEngine::rxSpectrumReady, this, &MainWindow::handleRxSpectrumReady);
+    connect(m_audioEngine, &AudioEngine::rxTargetHzChanged, this, &MainWindow::handleAfcTargetChanged);
     connect(m_audioEngine, &AudioEngine::txStarted, this, &MainWindow::handleTxStarted);
     connect(m_audioEngine, &AudioEngine::txFinished, this, &MainWindow::handleTxFinished);
     connect(m_audioEngine, &AudioEngine::txLevelChanged, this, &MainWindow::handleTxLevel);
@@ -106,20 +119,37 @@ MainWindow::MainWindow(QWidget *parent)
     mainLayout->addWidget(buildTopBar());
 
     auto *mainSplitter = new QSplitter(Qt::Horizontal, this);
+
+    auto *waterfallColumn = new QWidget(this);
+    auto *waterfallColumnLayout = new QVBoxLayout(waterfallColumn);
+    waterfallColumnLayout->setContentsMargins(0, 0, 0, 0);
+    waterfallColumnLayout->setSpacing(0);
+    auto *waterfallHeader = new QLabel("Waterfall", this);
+    waterfallHeader->setObjectName("panelHeader");
+    waterfallHeader->setFixedHeight(kPanelHeaderHeight);
+    waterfallColumnLayout->addWidget(waterfallHeader);
     m_waterfall = new WaterfallWidget(this);
     connect(m_waterfall, &WaterfallWidget::frequencyClicked, this, &MainWindow::handleWaterfallClick);
-    mainSplitter->addWidget(m_waterfall);
+    waterfallColumnLayout->addWidget(m_waterfall);
+    waterfallColumnLayout->setStretchFactor(m_waterfall, 1);
+    mainSplitter->addWidget(waterfallColumn);
+
     mainSplitter->addWidget(buildRightPanel());
     mainSplitter->setStretchFactor(0, 5);
     mainSplitter->setStretchFactor(1, 2);
     mainLayout->addWidget(mainSplitter, 1);
 
-    // Selected QSO, RX transcript, and the TX composer stay visible at all
-    // times - an operator mid-QSO should never lose the reply target or
-    // composer just because they checked the Log or Signal tab. Only the
-    // secondary reference info (log state, measurement windows) is tabbed.
-    mainLayout->addWidget(buildRxTranscriptPanel());
+    // Selected QSO sits directly under the frequency display (moved from
+    // below the waterfall/decoders row per explicit request) so the
+    // operator sees what's selected right next to the tuning display,
+    // and the waterfall/decoders row gets the freed-up vertical space.
     mainLayout->addWidget(buildSelectedQsoPanel());
+
+    // RX transcript and the TX composer stay visible at all times - an
+    // operator mid-QSO should never lose the composer just because they
+    // checked the Log or Signal tab. Only the secondary reference info
+    // (log state, measurement windows) is tabbed.
+    mainLayout->addWidget(buildRxTranscriptPanel());
     mainLayout->addWidget(buildTxPanel());
     mainLayout->addWidget(buildWorkflowPanel());
 
@@ -142,9 +172,20 @@ MainWindow::MainWindow(QWidget *parent)
 
     setStyleSheet(R"(
         QMainWindow, QWidget { background: #0b1017; color: #d8f7ff; }
-        QLabel#vfo { color: #6ee9ff; font-size: 42px; font-weight: 600; }
+        QLabel#vfo {
+            color: #6ee9ff;
+            background: #000000;
+            font-family: Consolas, 'DejaVu Sans Mono', 'Courier New', monospace;
+            font-size: 58px;
+            font-weight: 600;
+            letter-spacing: 2px;
+            border: 2px solid #2e5360;
+            border-radius: 6px;
+            padding: 4px 18px;
+        }
         QLabel#txSafe { color: #70ff9f; font-weight: 700; }
         QLabel#txInhibit { color: #ffb13e; font-weight: 700; }
+        QLabel#panelHeader { color: #9fd0e0; font-weight: 700; border-bottom: 1px solid #294554; padding-left: 2px; }
         QGroupBox { border: 1px solid #294554; margin-top: 10px; padding: 8px; font-weight: 600; }
         QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 4px; }
         QTableView { background: #070b10; gridline-color: #1e3d49; color: #74e6f6; selection-background-color: #16495c; }
@@ -254,7 +295,28 @@ QWidget *MainWindow::buildTopBar()
     m_vfoLabel->setObjectName("vfo");
     m_vfoLabel->setAlignment(Qt::AlignCenter);
     centerLayout->addStretch();
-    centerLayout->addWidget(m_vfoLabel);
+    auto *vfoRow = new QHBoxLayout();
+    vfoRow->addStretch();
+    vfoRow->addWidget(m_vfoLabel);
+    vfoRow->addStretch();
+    centerLayout->addLayout(vfoRow);
+
+    m_afcButton = new QPushButton("AFC", this);
+    m_afcButton->setCheckable(true);
+    m_afcButton->setToolTip(
+        "Automatic Frequency Control - when on, a genuine signal lock nudges the RX "
+        "target frequency to track drift instead of staying fixed where you last clicked "
+        "the waterfall. Off by default.");
+    connect(m_afcButton, &QPushButton::toggled, this, [this](bool enabled) {
+        if (m_audioEngine) {
+            m_audioEngine->setAfcEnabled(enabled);
+        }
+    });
+    auto *afcRow = new QHBoxLayout();
+    afcRow->addStretch();
+    afcRow->addWidget(m_afcButton);
+    afcRow->addStretch();
+    centerLayout->addLayout(afcRow);
     centerLayout->addStretch();
     outerLayout->addWidget(centerColumn, 1);
 
@@ -336,18 +398,20 @@ QWidget *MainWindow::buildRightPanel()
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    auto *activeBox = new QGroupBox("Active Decoders", this);
-    auto *activeLayout = new QVBoxLayout(activeBox);
-    activeLayout->setContentsMargins(8, 10, 8, 8);
+    auto *header = new QLabel("Active Decoders", this);
+    header->setObjectName("panelHeader");
+    header->setFixedHeight(kPanelHeaderHeight);
+    layout->addWidget(header);
+
     m_decodedLines = new DecodedLinesWidget(this);
     connect(m_decodedLines, &DecodedLinesWidget::lineClicked, this, [this](const DecodeLine &line) {
         DecodeLine selected = line;
         selected.callsign = extractCallsign(selected.text, selected.callsign);
         prepareReply(selected);
     });
-    activeLayout->addWidget(m_decodedLines);
+    layout->addWidget(m_decodedLines);
+    layout->setStretchFactor(m_decodedLines, 1);
 
-    layout->addWidget(activeBox);
     return panel;
 }
 
@@ -488,6 +552,24 @@ void MainWindow::handleSweeperClick(const QModelIndex &index)
     line.callsign = extractCallsign(line.text, line.callsign);
     prepareReply(line);
     m_activeModel->addOrUpdate(line);
+}
+
+void MainWindow::handleAfcTargetChanged(double audioHz)
+{
+    // Unlike handleWaterfallClick() (a manual re-tune, which resets state
+    // to "Searching" and clears the demod buffer since the operator is
+    // deliberately jumping to a new signal), this is AFC smoothly
+    // continuing to track the same signal - only the displayed frequency
+    // and the waterfall's RX marker need to move, not a hard state reset.
+    m_liveRxLine.metrics.audioFrequencyHz = audioHz;
+    m_liveRxLine.metrics.rfFrequencyMhz = (m_catFrequencyHz + audioHz) / 1000000.0;
+    if (m_selectedLine.metrics.audioFrequencyHz > 0.0) {
+        m_selectedLine.metrics.audioFrequencyHz = audioHz;
+        m_selectedLine.metrics.rfFrequencyMhz = m_liveRxLine.metrics.rfFrequencyMhz;
+    }
+    if (m_waterfall) {
+        m_waterfall->setRxAudioHz(audioHz);
+    }
 }
 
 void MainWindow::handleWaterfallClick(double audioHz)
