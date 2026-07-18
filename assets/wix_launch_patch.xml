@@ -1,11 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Adds a "Launch PSKedge now" checkbox to the installer's final page,
-  using WiX's built-in, documented mechanism for this (not custom
-  Dialog/Control XML): setting WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT
-  makes the standard WixUI_InstallDir exit dialog show the checkbox and
-  wire it up automatically - see
-  https://docs.firegiant.com/wix3/howtos/ui_and_localization/run_program_after_install/
+  Adds a "Launch PSKedge now" checkbox to the installer's final page.
+
+  First attempt (see git history) set only
+  WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT and a CustomAction named
+  "LaunchApplication", on the assumption that WiX's standard exit
+  dialog template already has a Publish/DoAction event pre-wired to a
+  custom action of exactly that name (this is how several WiX
+  tutorials describe it working). Real testing showed that assumption
+  was wrong, incomplete, or didn't apply to whatever exit dialog
+  CPack's own template actually uses: the checkbox displayed and was
+  checkable, but clicking Finish with it checked did not launch
+  anything. Rather than keep guessing at what WiX's template does
+  implicitly, added the Publish element explicitly below - this
+  removes the dependency on that assumption entirely, whether or not
+  it was ever correct.
 
   WixShellExecTarget references the installed executable via
   [INSTALLFOLDER] (the standard directory property WiX's InstallDir UI
@@ -13,14 +22,12 @@
   relative path, rather than the file's own auto-generated Id (which
   CPack's WiX generator assigns internally and isn't predictable enough
   to reference reliably without inspecting the actual generated .wxs -
-  something this environment has no WiX toolchain to do). If
-  INSTALLFOLDER turns out not to be what CPack's own template actually
-  calls it, WiX's build step should fail with a clear unresolved-symbol
-  error naming the missing property - much more diagnosable than a
-  silent no-op, and the kind of error this project has successfully
-  iterated against before (see the windeployqt ordering fix and the
-  installer branding collision, both found and fixed from real CI
-  output rather than guessed blind).
+  something this environment has no WiX toolchain to do). This part is
+  confirmed correct as far as it goes: the build succeeds referencing
+  it, so INSTALLFOLDER is a real, resolvable property in CPack's
+  template - what's not yet confirmed is whether it resolves to the
+  actual install location at runtime, which the explicit Publish
+  addition alone cannot verify from here.
 
   WixShellExec is a built-in custom action provided by WixUtilExtension
   (BinaryKey "WixCA" is the standard binary key WiX ships that under) -
@@ -30,6 +37,9 @@
   <CPackWiXFragment Id="#PRODUCT">
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch PSKedge now" />
     <Property Id="WixShellExecTarget" Value="[INSTALLFOLDER]bin\pskedge.exe" />
-    <CustomAction Id="LaunchApplication" BinaryKey="WixCA" DllEntry="WixShellExec" Impersonate="yes" />
+    <CustomAction Id="LaunchApplication" BinaryKey="WixCA" DllEntry="WixShellExec" Impersonate="yes" Return="asyncNoWait" />
+    <UI>
+      <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="LaunchApplication" Order="999">WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed</Publish>
+    </UI>
   </CPackWiXFragment>
 </CPackWiXPatch>
