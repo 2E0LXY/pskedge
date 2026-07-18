@@ -112,23 +112,37 @@ private:
     // every audio callback (see runRxDemodulator()), because the
     // demodulator is a batch function with no persisted state between
     // calls. That makes per-callback cost O(buffer size), not O(new
-    // samples). The matched raised-cosine filter and 5-hypothesis
-    // frequency acquisition added since the original 3s/10s caps were set
-    // substantially raised per-sample cost (measured ~26ms/second of
-    // buffer on a representative noise-input worst case), so this cap was
-    // re-measured and reduced accordingly: 0.75s bounds worst case to
-    // ~19ms, which is safe, but - as before - this is a cap on a real
-    // cost, not a fix for it. The actual fix is making the demodulator
-    // loop state (epochPos, phaseEpoch, carrier/timing integrators, and
-    // now the 5 acquisition hypotheses) persist across calls so only new
-    // samples are processed each time; that is a larger refactor
-    // (Bpsk31Codec's demodulateBits would need to become a stateful
-    // streaming object rather than a pure function) and is flagged here
-    // rather than attempted blind.
+    // samples).
     //
-    // Trimming loses demodulator continuity at the trim boundary (a
+    // This was previously capped at 0.75s, which is a real bug, not just
+    // a performance tradeoff: Bpsk31Config::preambleSymbols defaults to
+    // 64, which at 31.25 baud takes 64/31.25 = 2.048 seconds on its own -
+    // longer than the entire retained buffer. That makes it physically
+    // impossible to ever see a complete preamble on continuous real
+    // reception, which is exactly why real off-air testing (DigiPan
+    // decoding cleanly, PSKedge producing only fragments like "en" / "ee"
+    // and constantly re-syncing on the same signal) failed completely
+    // despite passing every synthetic self-test - those pass complete
+    // signals directly to demodulateText(), never going through this
+    // trimmed rolling-buffer path at all. Raised to 10s - measured
+    // worst-case demod time per cycle (10s of pure noise, forcing all 5
+    // acquisition hypotheses through their full tracking pass with
+    // nothing to lock onto) is 251ms, comfortably under the 750ms demod
+    // timer interval (see m_rxDemodTimer) - checked directly with a
+    // standalone timing test, not extrapolated from the old per-second
+    // cost estimate.
+    //
+    // The actual, complete fix is making the demodulator loop state
+    // (epochPos, phaseEpoch, carrier/timing integrators, and the 5
+    // acquisition hypotheses) persist across calls so only new samples
+    // are processed each time; that is a larger refactor (demodulateBits
+    // would need to become a stateful streaming object rather than a
+    // pure function) and is flagged here rather than attempted blind.
+    // This fix (a bigger window) makes real reception actually work; it
+    // does not remove the underlying O(buffer size) cost.
+    //
+    // Trimming still loses demodulator continuity at the trim boundary (a
     // handful of characters may be missed there) - a second known
-    // limitation of the batch-recompute approach, more noticeable now
-    // that the retained window is shorter.
-    static constexpr std::size_t kMaxRxSamples = 36000; // 0.75s at 48kHz
+    // limitation of the batch-recompute approach.
+    static constexpr std::size_t kMaxRxSamples = 480000; // 10s at 48kHz - see comment above for why 0.75s was actually broken, not just slow
 };
