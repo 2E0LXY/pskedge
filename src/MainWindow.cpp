@@ -443,8 +443,8 @@ QWidget *MainWindow::buildRxTranscriptPanel()
     m_rxTranscript->setReadOnly(true);
     m_rxTranscript->setMaximumHeight(55);
     m_rxTranscript->setPlaceholderText(
-        "Real demodulated audio appears here. Click the waterfall to tune the RX offset - "
-        "there is no AFC yet, so this only locks near the clicked frequency.");
+        "Real demodulated audio appears here. Click the waterfall to tune the RX offset, "
+        "or enable AFC to track a locked signal automatically.");
     layout->addWidget(m_rxTranscript);
     return box;
 }

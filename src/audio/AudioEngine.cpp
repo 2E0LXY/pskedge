@@ -90,6 +90,11 @@ bool AudioEngine::startRx()
     return true;
 }
 
+void AudioEngine::setAfcEnabled(bool enabled)
+{
+    m_afcEnabled = enabled;
+}
+
 void AudioEngine::setRxTargetHz(double audioHz)
 {
     m_rxTargetHz = audioHz;
@@ -99,11 +104,6 @@ void AudioEngine::setRxTargetHz(double audioHz)
     m_rxSamples.clear();
     m_rxLastDecoded.clear();
     m_rxDemodPending = false;
-}
-
-void AudioEngine::setAfcEnabled(bool enabled)
-{
-    m_afcEnabled = enabled;
 }
 
 void AudioEngine::stopRx()
