@@ -2,33 +2,36 @@
 <!--
   Adds a "Launch PSKedge now" checkbox to the installer's final page.
 
-  First attempt (see git history) set only
-  WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT and a CustomAction named
-  "LaunchApplication", on the assumption that WiX's standard exit
-  dialog template already has a Publish/DoAction event pre-wired to a
-  custom action of exactly that name (this is how several WiX
-  tutorials describe it working). Real testing showed that assumption
-  was wrong, incomplete, or didn't apply to whatever exit dialog
-  CPack's own template actually uses: the checkbox displayed and was
-  checkable, but clicking Finish with it checked did not launch
-  anything. Rather than keep guessing at what WiX's template does
-  implicitly, added the Publish element explicitly below - this
-  removes the dependency on that assumption entirely, whether or not
-  it was ever correct.
+  Two earlier attempts (see git history) each got real, specific errors
+  from Windows CI rather than a silent no-op, and were fixed from that
+  actual output rather than guessed further:
+
+  1. First attempt assumed WiX's standard exit dialog template already
+     had a Publish/DoAction event pre-wired to any custom action named
+     "LaunchApplication". Real testing showed the checkbox displayed
+     but Finish did nothing - that assumption was wrong or incomplete.
+     Fixed by adding the Publish elements explicitly (see below).
+
+  2. That fix then failed to build with two concrete WiX errors:
+     - CNDL1077: a plain <Property Value="[INSTALLFOLDER]..."> does
+       not do property-reference substitution - only certain contexts
+       (like a CustomAction's Property/Value pair) do. Fixed per the
+       warning's own suggested fix: a separate "set property" custom
+       action (Property="WixShellExecTarget" Value="[INSTALLFOLDER]..."),
+       published to run immediately before WixShellExec so the target
+       is set correctly before it's used.
+     - CNDL0038: Return="asyncNoWait" is only valid on a CustomAction
+       with an ExeCommand attribute - this CustomAction uses
+       BinaryKey/DllEntry instead (calling into WixCA.dll's
+       WixShellExec entry point, not launching an exe directly), a
+       different CustomAction pattern that doesn't take Return.
+       Removed the attribute; WixShellExec's own default behaviour
+       (documented as suitable for "install the application, then
+       optionally launch it") applies instead.
 
   WixShellExecTarget references the installed executable via
-  [INSTALLFOLDER] (the standard directory property WiX's InstallDir UI
-  uses to let the user pick/see the install location) plus the known
-  relative path, rather than the file's own auto-generated Id (which
-  CPack's WiX generator assigns internally and isn't predictable enough
-  to reference reliably without inspecting the actual generated .wxs -
-  something this environment has no WiX toolchain to do). This part is
-  confirmed correct as far as it goes: the build succeeds referencing
-  it, so INSTALLFOLDER is a real, resolvable property in CPack's
-  template - what's not yet confirmed is whether it resolves to the
-  actual install location at runtime, which the explicit Publish
-  addition alone cannot verify from here.
-
+  [INSTALLFOLDER]bin\pskedge.exe - INSTALLFOLDER is the standard
+  directory property WiX's InstallDir UI uses for the install location.
   WixShellExec is a built-in custom action provided by WixUtilExtension
   (BinaryKey "WixCA" is the standard binary key WiX ships that under) -
   this project doesn't implement any custom action code itself.
@@ -36,9 +39,10 @@
 <CPackWiXPatch>
   <CPackWiXFragment Id="#PRODUCT">
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch PSKedge now" />
-    <Property Id="WixShellExecTarget" Value="[INSTALLFOLDER]bin\pskedge.exe" />
-    <CustomAction Id="LaunchApplication" BinaryKey="WixCA" DllEntry="WixShellExec" Impersonate="yes" Return="asyncNoWait" />
+    <CustomAction Id="SetLaunchApplicationTarget" Property="WixShellExecTarget" Value="[INSTALLFOLDER]bin\pskedge.exe" />
+    <CustomAction Id="LaunchApplication" BinaryKey="WixCA" DllEntry="WixShellExec" Impersonate="yes" />
     <UI>
+      <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="SetLaunchApplicationTarget" Order="998">WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed</Publish>
       <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="LaunchApplication" Order="999">WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed</Publish>
     </UI>
   </CPackWiXFragment>
