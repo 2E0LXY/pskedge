@@ -6,6 +6,7 @@
 #include "dsp/CwCodec.h"
 #include "dsp/PskVaricode.h"
 #include "dsp/QpskConvCode.h"
+#include "dsp/ft8/Crc14.h"
 #include "dsp/ft8/Ldpc174_91.h"
 #include "dsp/Qpsk31Codec.h"
 
@@ -560,6 +561,37 @@ bool checkStreamDecoderGearShiftingNoiseTolerance(std::string *error)
     return true;
 }
 
+bool checkFt8Crc14(std::string *error)
+{
+    // Known-answer test vector from the reference implementation
+    // (rtmrtmrtmrtm/weakmon's ft8.py, its own commented-out CRC self-
+    // test) - a real, independently-verified test vector, not
+    // self-generated (a self-generated vector could not catch a bug
+    // shared between the test and the implementation).
+    std::vector<int> msg(82, 0);
+    msg[3] = 1;
+    msg[7] = 1;
+    msg[44] = 1;
+    msg[45] = 1;
+    msg[46] = 1;
+    msg[51] = 1;
+    msg[61] = 1;
+    msg[71] = 1;
+    const std::vector<int> expected = {1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1};
+    const std::vector<int> actual = psk::dsp::ft8::Crc14::compute(msg);
+    if (actual != expected) {
+        if (error) {
+            std::string exp;
+            std::string act;
+            for (int b : expected) exp += std::to_string(b);
+            for (int b : actual) act += std::to_string(b);
+            *error = "Crc14 known-answer test failed: expected " + exp + " got " + act;
+        }
+        return false;
+    }
+    return true;
+}
+
 bool checkFt8LdpcRoundTripAndFec(std::string *error)
 {
     // The generator/parity matrices this uses are transcribed from a
@@ -854,6 +886,11 @@ int main()
     if (!checkQpsk31RoundTripAndFec(&error)) {
         std::cerr << "Qpsk31Codec check failed: " << error << '\n';
         return 15;
+    }
+
+    if (!checkFt8Crc14(&error)) {
+        std::cerr << "Crc14 check failed: " << error << '\n';
+        return 17;
     }
 
     if (!checkFt8LdpcRoundTripAndFec(&error)) {
