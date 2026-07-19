@@ -6,6 +6,7 @@
 #include "dsp/CwCodec.h"
 #include "dsp/PskVaricode.h"
 
+#include <array>
 #include <cmath>
 #include <iostream>
 #include <random>
@@ -15,15 +16,29 @@
 
 namespace {
 
-// Golden vectors from the ARRL/G3PLX PSK31 Varicode specification
-// (https://www.arrl.org/psk31-spec). A pure round-trip test cannot catch a
-// wrong table entry because encode and decode share the same table; these
-// vectors are transcribed independently to catch that class of bug.
+// Golden vectors from the ARRL/QEX PSK31 specification (Peter Martinez
+// G3PLX, "PSK31: A New Radio-Teletype Mode", July/Aug 1999 QEX - fetched
+// and checked directly against https://www.arrl.org/files/file/Technology/
+// tis/info/pdf/x9907003.pdf, not from memory). A pure round-trip test
+// cannot catch a wrong table entry because encode and decode share the
+// same table; these vectors are transcribed independently to catch that
+// class of bug.
+//
+// The 'Q' entry here was ITSELF wrong until this was checked against the
+// real source document: it asserted "1111011101" (10 bits), matching a
+// transcription error that had been in the main table (PskVaricode.cpp)
+// the whole time - meaning this test had been protecting that bug, not
+// catching it, since a "golden vector" that's independently wrong in the
+// same way as the code it's checking gives false confidence rather than
+// none. The actual G3PLX-specified code is "111011101" (9 bits). Found
+// only by fetching the real document and diffing the whole table against
+// it programmatically, not by re-reading this comment's own claim that
+// it had already been checked.
 bool checkGoldenVaricodeVectors(std::string *error)
 {
     static const std::unordered_map<unsigned char, std::string> golden = {
         {' ', "1"}, {'e', "11"}, {'t', "101"}, {'a', "1011"},
-        {'C', "10101101"}, {'Q', "1111011101"}, {'K', "101111101"},
+        {'C', "10101101"}, {'Q', "111011101"}, {'K', "101111101"},
         {'0', "10110111"}, {'9', "110110111"},
     };
 
@@ -33,6 +48,67 @@ bool checkGoldenVaricodeVectors(std::string *error)
             if (error) {
                 *error = std::string("Varicode mismatch for '") + static_cast<char>(ch)
                     + "': expected " + expected + " got " + actual;
+            }
+            return false;
+        }
+    }
+    return true;
+}
+
+// Full 128-entry table, independently transcribed from the same source as
+// checkGoldenVaricodeVectors's spot-checks above
+// (https://www.arrl.org/files/file/Technology/tis/info/pdf/x9907003.pdf,
+// Table 1). Added after the spot-check vectors above turned out to have
+// missed a real transcription error in the main table for years (see the
+// comment on checkGoldenVaricodeVectors) - 9 spot-checked characters out
+// of 128 gives no protection against an error in any of the other 119,
+// which is exactly what happened. This checks all of them.
+bool checkFullVaricodeTable(std::string *error)
+{
+    static const std::array<const char *, 128> authoritative = {
+        "1010101011", "1011011011", "1011101101", "1101110111",
+        "1011101011", "1101011111", "1011101111", "1011111101",
+        "1011111111", "11101111",   "11101",      "1101101111",
+        "1011011101", "11111",      "1101110101", "1110101011",
+        "1011110111", "1011110101", "1110101101", "1110101111",
+        "1101011011", "1101101011", "1101101101", "1101010111",
+        "1101111011", "1101111101", "1110110111", "1101010101",
+        "1101011101", "1110111011", "1011111011", "1101111111",
+        "1",          "111111111",  "101011111",  "111110101",
+        "111011011",  "1011010101", "1010111011", "101111111",
+        "11111011",   "11110111",   "101101111",  "111011111",
+        "1110101",    "110101",     "1010111",    "110101111",
+        "10110111",   "10111101",   "11101101",   "11111111",
+        "101110111",  "101011011",  "101101011",  "110101101",
+        "110101011",  "110110111",  "11110101",   "110111101",
+        "111101101",  "1010101",    "111010111",  "1010101111",
+        "1010111101", "1111101",    "11101011",   "10101101",
+        "10110101",   "1110111",    "11011011",   "11111101",
+        "101010101",  "1111111",    "111111101",  "101111101",
+        "11010111",   "10111011",   "11011101",   "10101011",
+        "11010101",   "111011101",  "10101111",   "1101111",
+        "1101101",    "101010111",  "110110101",  "101011101",
+        "101110101",  "101111011",  "1010101101", "111110111",
+        "111101111",  "111111011",  "1010111111", "101101101",
+        "1011011111", "1011",       "1011111",    "101111",
+        "101101",     "11",         "111101",     "1011011",
+        "101011",     "1101",       "111101011",  "10111111",
+        "11011",      "111011",     "1111",       "111",
+        "111111",     "110111111",  "10101",      "10111",
+        "101",        "110111",     "1111011",    "1101011",
+        "11011111",   "1011101",    "111010101",  "1010110111",
+        "110111011",  "1010110101", "1011010111", "1110110101",
+    };
+
+    for (int i = 0; i < 128; ++i) {
+        const std::string actual = psk::dsp::PskVaricode::codeForAscii(static_cast<unsigned char>(i));
+        if (actual != authoritative[static_cast<std::size_t>(i)]) {
+            if (error) {
+                const std::string label = (i >= 32 && i < 127)
+                    ? std::string("'") + static_cast<char>(i) + "'"
+                    : "ASCII " + std::to_string(i);
+                *error = "Varicode table mismatch at index " + std::to_string(i) + " (" + label
+                    + "): expected " + authoritative[static_cast<std::size_t>(i)] + " got " + actual;
             }
             return false;
         }
@@ -461,6 +537,11 @@ int main()
     if (!checkGoldenVaricodeVectors(&error)) {
         std::cerr << "Varicode golden vector check failed: " << error << '\n';
         return 4;
+    }
+
+    if (!checkFullVaricodeTable(&error)) {
+        std::cerr << "Varicode full table check failed: " << error << '\n';
+        return 13;
     }
 
     std::string printable;

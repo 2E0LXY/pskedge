@@ -102,11 +102,12 @@ covers the 18 modes actually in the trimmed list above:
 
 ## Real-world BPSK31 reception status
 
-Tested against real recordings, not just synthetic signals - three
+Tested against real recordings, not just synthetic signals - five
 provided during development (a Wikipedia reference sample, a BARTG
-sample, a photobyte.org sample; see git history for the specific
-commits and URLs). Two real, separate bugs were found and fixed this
-way, neither of which any synthetic test had caught:
+sample, two photobyte.org/similar samples, and psk31.wav; see git
+history for the specific commits and URLs). Three real, separate bugs
+were found and fixed this way, none of which any synthetic test had
+caught:
 
 1. **Matched filter pulse-shape mismatch** (fixed) - the correlator
    window reached a full symbol period into each neighbouring symbol,
@@ -121,10 +122,31 @@ way, neither of which any synthetic test had caught:
    preamble once, so decoding fell apart as soon as it scrolled out of
    whatever window was being processed, regardless of signal quality.
    See `Bpsk31StreamDecoder`.
+3. **Varicode table error for 'Q'** (fixed) - the table entry for 'Q'
+   was 10 bits (`1111011101`); the actual G3PLX specification (checked
+   directly against two independent primary sources: the ARRL/QEX
+   article and the original PSK31 web page article, both fetched and
+   diffed programmatically against the full 128-entry table, not
+   spot-checked) says 9 bits (`111011101`). A pure round-trip test
+   never caught this because encode and decode shared the same wrong
+   table; even the project's own "golden vector" regression test had
+   independently made the identical transcription error, so it had
+   been protecting the bug rather than catching it. Fixed, and
+   replaced the 9-character spot-check with a full 128-entry table
+   check (`checkFullVaricodeTable` in `psk_core_selftest.cpp`) so this
+   class of error can't recur undetected in the untested 119 entries
+   again. 'Q' is common in real ham traffic (CQ, QSO, QTH, QRZ, QRP,
+   QRM) and Varicode's self-synchronisation means one wrong-length
+   code corrupts everything decoded after it in the same message - this
+   is likely to measurably improve real-world decode quality generally,
+   though it did not change the outcome on either of the two
+   still-unexplained files below (their content likely doesn't happen
+   to contain much text containing Q).
 
-After both fixes, one of the three real recordings (photobyte.org's,
-a repeating test message) decodes completely and continuously with
-zero corruption. The other two still do not decode cleanly:
+After all three fixes, three of the five real recordings tested decode
+completely and correctly (two cleanly and continuously with zero
+corruption; see git history). The other two still do not decode
+cleanly:
 
 - The Wikipedia sample fails across the entire audio passband even at
   its exact measured carrier frequency and symbol rate, with the
