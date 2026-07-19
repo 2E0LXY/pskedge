@@ -132,6 +132,15 @@ zero corruption. The other two still do not decode cleanly:
   symbol rate, Vorbis compression (a known-good signal survives the
   same compression round-trip perfectly), matched-filter pulse shape,
   and low SNR (this file measures ~30dB, not marginal).
+- A second sample (psk31.wav, 8-bit PCM) shows the same
+  unexplained-failure pattern: symbol rate confirmed correct (31.25
+  baud, verified via phase-transition timing), 8-bit quantization
+  ruled out directly (a known-good signal decodes correctly after the
+  same quantization), DC offset checked and found minimal. Two
+  genuinely unexplained real-world failures now, out of five real
+  files tested this session - the other three (BARTG, and two others
+  that decoded cleanly: a photobyte.org sample and a second MP3
+  sample) are all understood.
 - The BARTG sample shows recognisable but incomplete fragments ("RST
   599", "Dipole" recur consistently rather than being pure noise).
   Confirmed, not just measured indirectly: fixed a real reporting bug
