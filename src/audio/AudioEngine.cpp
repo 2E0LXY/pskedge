@@ -173,6 +173,13 @@ bool AudioEngine::transmitBpsk31(const QString &text, double audioHz)
         cwConfig.wpm = 18.0; // standard, unhurried hand-sending speed - not yet operator-configurable
         const psk::dsp::CwCodec cwCodec(cwConfig);
         samples = cwCodec.modulateText(text.toStdString());
+    } else if (m_mode == OperatingMode::Qpsk31) {
+        psk::dsp::Qpsk31Config config;
+        config.sampleRate = format.sampleRate();
+        config.carrierHz = std::clamp(audioHz, 300.0, 3000.0);
+        config.amplitude = 0.55;
+        const psk::dsp::Qpsk31Codec codec(config);
+        samples = codec.modulateText(text.toStdString());
     } else {
         psk::dsp::Bpsk31Config config;
         config.sampleRate = format.sampleRate();
@@ -199,7 +206,8 @@ bool AudioEngine::transmitBpsk31(const QString &text, double audioHz)
     emit txStarted();
     emit statusChanged(QString("TX audio: %1 %2 at %3 Hz")
                             .arg(output.description())
-                            .arg(m_mode == OperatingMode::Cw ? "CW" : "BPSK31")
+                            .arg(m_mode == OperatingMode::Cw ? "CW"
+                                     : m_mode == OperatingMode::Qpsk31 ? "QPSK31" : "BPSK31")
                             .arg(std::clamp(audioHz, 300.0, 3000.0), 0, 'f', 0));
     return true;
 }
@@ -374,6 +382,24 @@ void AudioEngine::runRxDemodulator()
         // CW has no equivalent to Bpsk31Codec::measureSignalQuality yet -
         // left at 0 rather than fabricating a reading for a measurement
         // that doesn't exist for this mode.
+    } else if (m_mode == OperatingMode::Qpsk31) {
+        // Batch demodulation, not streaming - unlike BPSK31, there is no
+        // Qpsk31StreamDecoder yet (the same "needs a fresh preamble every
+        // call" limitation Bpsk31StreamDecoder was built to fix - see
+        // that class's comment - still applies here). A disclosed scope
+        // limit, not an oversight: QPSK31 is a secondary/optional mode
+        // (see FEATURE_ROADMAP.md), and this session's priority was
+        // fixing BPSK31's real-world reception first. Re-run over
+        // m_rxSamples (the same retained buffer the waterfall uses, not
+        // m_newRxSamplesForDecoder, which only makes sense for the
+        // streaming path).
+        psk::dsp::Qpsk31Config config;
+        config.sampleRate = m_rxSampleRate;
+        config.carrierHz = m_rxTargetHz;
+        const psk::dsp::Qpsk31Codec codec(config);
+        decoded = codec.demodulateText(m_rxSamples);
+        // No signal-quality measurement for QPSK31 yet either - left at
+        // 0/unavailable rather than fabricated.
     } else {
         // Costas carrier PLL + Gardner symbol-timing recovery + 5-hypothesis
         // frequency acquisition (validated envelope: +/-10Hz carrier offset,

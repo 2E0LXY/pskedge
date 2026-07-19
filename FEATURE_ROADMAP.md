@@ -8,11 +8,13 @@ to prioritise what to build.
 
 ## Mode list: curated, not a copy of any one program's full list
 
-Some established multi-mode suites list 80+ mode/bandwidth variants across
-a dozen-plus mode families. The dropdown here was deliberately trimmed to
-18 entries covering only modes with real current amateur usage, based on
-research (2026-07-16) rather than mirroring any one program's full
-historical list:
+This section originally described an 18-entry mode dropdown/button grid,
+trimmed from established multi-mode suites' 80+ mode/bandwidth variants to
+cover only modes with real current amateur usage. That grid was removed
+entirely (see git history) - it implied capability that didn't exist for
+16 of its 18 entries. The list below is retained as a record of that
+research, not as a description of current UI (Modes is now a plain menu
+listing only the modes that actually work: PSK31, QPSK31, CW):
 
 - **Kept**: PSK/QPSK (31/63/125), RTTY (FSK/AFSK), CW, MFSK (8/16), Olivia
   (the three standard calling-frequency configs: 8/250, 16/500, 32/1000),
@@ -55,29 +57,43 @@ matching what's actually on the air, not a permanent ruling.
 ## Mode implementation priority
 
 Ordered by (a) how different the DSP is from what's already built and (b)
-real-world usage, not by the order modes appear in the dropdown. Only
-covers the 18 modes actually in the trimmed list above:
+real-world usage, not by the order modes appeared in the old dropdown.
 
-1. **PSK128FEC** - already in progress (`ConvCode`, `Crc16`, `BlockSyncCodec`
-   exist). Finish wiring it into TX/RX and the UI before starting new modes.
-2. **QPSK31/QPSK63/QPSK125** - closest to existing `Bpsk31Codec`: same
-   symbol rate family, adds a second bit/symbol via quadrature. Smallest
-   real jump from what's already built and validated.
-3. **BPSK63/BPSK125** - same modulation as BPSK31 at a different baud
-   rate; mechanically simple once QPSK's quadrature handling is in place,
-   since it reuses the same coherent/differential decision logic.
-4. **RTTY (FSK/AFSK)** - very different DSP (frequency-shift, not
+1. ~~**PSK128FEC**~~ - superseded. This was an experimental FEC scheme
+   with its own `ConvCode`; QPSK31 (below) turned out to be the mode worth
+   finishing, since it's the real, spec-defined variant other PSK31
+   stations actually use, not an experimental one-off.
+2. ~~**QPSK31**~~ - **done**. `Qpsk31Codec` + `QpskConvCode` (the actual
+   G3PLX 32-state trellis code, transcribed and verified against two
+   independent primary sources - see git history). Real error correction
+   confirmed (fully corrects 1-2% symbol error rates in testing), and
+   directly compared against BPSK31 at matched noise levels: QPSK31 is
+   consistently *worse* in steady white noise, exactly matching what the
+   G3PLX spec itself documents (QPSK only helps against burst/fading
+   noise, not steady noise) - not a bug, expected and validated behaviour.
+   Selectable via the Modes menu. Known scope limit: batch demodulation
+   only, not streaming - QPSK31 doesn't yet have the continuous-reception
+   fix `Bpsk31StreamDecoder` gave BPSK31 (see the "Real-world BPSK31
+   reception status" section - the same "needs a fresh preamble every
+   call" limitation still applies here). QPSK63/QPSK125 (different baud
+   rates, same modulation) not yet built.
+3. ~~**CW**~~ - **done**. `CwCodec`, real envelope-detect on/off-keying
+   decoder with adaptive WPM estimation - see git history for validation
+   details (round-trip across a real speed range, noise-rejection
+   testing). Selectable via the Modes menu.
+4. **BPSK63/BPSK125** - same modulation as BPSK31 at a different baud
+   rate; mechanically simple now that QPSK's quadrature handling exists
+   as a reference, since it reuses the same coherent/differential
+   decision logic as BPSK31 itself.
+5. **RTTY (FSK/AFSK)** - very different DSP (frequency-shift, not
    phase-shift; Baudot, not Varicode) but the highest real-world usage
    after PSK (contesting) and no coding-theory-heavy tuning like BPSK31's
    Costas/Gardner work needed - a self-contained, bounded piece of work.
-5. **MFSK8/MFSK16** - incremental FSK-family modes once RTTY's
+6. **MFSK8/MFSK16** - incremental FSK-family modes once RTTY's
    frequency-domain demodulation groundwork exists.
-6. **Olivia (8/250, 16/500, 32/1000)** - MFSK-derived with strong FEC;
+7. **Olivia (8/250, 16/500, 32/1000)** - MFSK-derived with strong FEC;
    natural follow-on once both the FSK path and a general block-FEC
    framework (`ConvCode`/`BlockSyncCodec`) exist.
-7. **CW** - a genuinely distinct signal representation (Morse timing, not
-   a symbol-rate digital mode) - treat as its own project, not a
-   continuation of the PSK/FSK work above.
 8. **Feld Hell** - fax-like pixel mode, distinct DSP again (visual/human-
    readable decoding rather than symbol decisions).
 9. **SSTV (Martin 1, Scottie 1, Robot 36)** - image transmission, the

@@ -5,6 +5,8 @@
 #include "dsp/Crc16.h"
 #include "dsp/CwCodec.h"
 #include "dsp/PskVaricode.h"
+#include "dsp/QpskConvCode.h"
+#include "dsp/Qpsk31Codec.h"
 
 #include <array>
 #include <cmath>
@@ -522,6 +524,80 @@ bool checkStreamDecoderGearShiftingNoiseTolerance(std::string *error)
     return true;
 }
 
+bool checkQpsk31RoundTripAndFec(std::string *error)
+{
+    const std::string message = "CQ CQ DE 2E0LXY K THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG 73";
+
+    // Clean round-trip.
+    {
+        psk::dsp::Qpsk31Config config;
+        const psk::dsp::Qpsk31Codec codec(config);
+        const std::vector<double> samples = codec.modulateText(message);
+        const std::string decoded = codec.demodulateText(samples);
+        if (decoded.find(message) == std::string::npos) {
+            if (error) {
+                *error = "Qpsk31Codec clean round-trip failed (decoded: \"" + decoded + "\")";
+            }
+            return false;
+        }
+    }
+
+    // Frequency offset within the validated range (spec: QPSK31 needs
+    // tuning within ~4Hz per hypothesis - see the acquisition comment in
+    // Qpsk31Codec.cpp).
+    {
+        psk::dsp::Qpsk31Config txConfig;
+        txConfig.carrierHz = 1008.0;
+        const psk::dsp::Qpsk31Codec txCodec(txConfig);
+        const std::vector<double> samples = txCodec.modulateText(message);
+        const psk::dsp::Qpsk31Codec rxCodec; // nominal 1000Hz
+        const std::string decoded = rxCodec.demodulateText(samples);
+        if (decoded.find(message) == std::string::npos) {
+            if (error) {
+                *error = "Qpsk31Codec 8Hz offset acquisition failed (decoded: \"" + decoded + "\")";
+            }
+            return false;
+        }
+    }
+
+    // Real error correction from the trellis code, not just a pass-
+    // through: inject phase-shift symbol errors directly (bypassing the
+    // modulator/channel) and confirm the Viterbi decoder recovers the
+    // exact original bits at a real, non-trivial error rate. This is
+    // QpskConvCode's own contract, checked here as part of the full
+    // pipeline rather than only in isolation.
+    {
+        const std::vector<int> bits = psk::dsp::PskVaricode::encodeTextBits(message);
+        std::vector<int> framed(64, 0);
+        framed.insert(framed.end(), bits.begin(), bits.end());
+        std::vector<int> shifts = psk::dsp::QpskConvCode::encode(framed);
+
+        std::mt19937 rng(42);
+        std::uniform_real_distribution<double> u(0.0, 1.0);
+        std::uniform_int_distribution<int> randShift(0, 3);
+        constexpr double kErrorRate = 0.02; // matches the "corrects fully" case measured during development
+        for (int &s : shifts) {
+            if (u(rng) < kErrorRate) {
+                int newVal;
+                do {
+                    newVal = randShift(rng);
+                } while (newVal == s);
+                s = newVal;
+            }
+        }
+        const std::vector<int> decodedBits = psk::dsp::QpskConvCode::decode(shifts);
+        if (decodedBits != framed) {
+            if (error) {
+                *error = "QpskConvCode failed to fully correct a 2% symbol error rate - "
+                    "measured during development to be within the code's correction capability";
+            }
+            return false;
+        }
+    }
+
+    return true;
+}
+
 bool checkCwCodecRoundTrip(std::string *error)
 {
     const std::string message = "CQ CQ DE 2E0LXY 2E0LXY K THE QUICK BROWN FOX 73";
@@ -657,6 +733,11 @@ int main()
     if (!checkStreamDecoderGearShiftingNoiseTolerance(&error)) {
         std::cerr << "Bpsk31StreamDecoder gear-shifting check failed: " << error << '\n';
         return 14;
+    }
+
+    if (!checkQpsk31RoundTripAndFec(&error)) {
+        std::cerr << "Qpsk31Codec check failed: " << error << '\n';
+        return 15;
     }
 
     if (!checkCwCodecRoundTrip(&error)) {

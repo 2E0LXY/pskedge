@@ -53,32 +53,44 @@ MainWindow::MainWindow(QWidget *parent)
 {
     loadSettings();
 
-    setWindowTitle("PSKedge v0.5.8 beta");
+    setWindowTitle("PSKedge v0.5.9 beta");
     resize(1480, 900);
 
     auto *settingsAction = new QAction("Setup", this);
     connect(settingsAction, &QAction::triggered, this, &MainWindow::openSettings);
     menuBar()->addMenu("File")->addAction(settingsAction);
 
-    // Only two real, working modes - the button grid that used to list
-    // ~18 modes (only BPSK31 of which ever actually decoded anything)
-    // was removed per explicit request rather than kept implying
-    // capability that didn't exist. CW is new and real, not a
-    // placeholder - see AudioEngine::OperatingMode and CwCodec.
+    // Three real, working modes - the button grid that used to list ~18
+    // modes (only BPSK31 of which ever actually decoded anything) was
+    // removed per explicit request rather than kept implying capability
+    // that didn't exist. CW and QPSK31 are new and real, not
+    // placeholders - see AudioEngine::OperatingMode, CwCodec, and
+    // Qpsk31Codec.
     auto *modesMenu = menuBar()->addMenu("Modes");
     auto *modeGroup = new QActionGroup(this);
     modeGroup->setExclusive(true);
     m_psk31ModeAction = new QAction("PSK31", this);
     m_psk31ModeAction->setCheckable(true);
     m_psk31ModeAction->setChecked(true);
+    m_qpsk31ModeAction = new QAction("QPSK31", this);
+    m_qpsk31ModeAction->setCheckable(true);
+    m_qpsk31ModeAction->setToolTip(
+        "Error-corrected but twice as tuning-critical as PSK31, and generally worse "
+        "in steady noise (per the G3PLX spec) - only helps against burst/fading noise");
     m_cwModeAction = new QAction("CW", this);
     m_cwModeAction->setCheckable(true);
     modeGroup->addAction(m_psk31ModeAction);
+    modeGroup->addAction(m_qpsk31ModeAction);
     modeGroup->addAction(m_cwModeAction);
     modesMenu->addAction(m_psk31ModeAction);
+    modesMenu->addAction(m_qpsk31ModeAction);
     modesMenu->addAction(m_cwModeAction);
-    connect(m_psk31ModeAction, &QAction::triggered, this, [this]() { handleModeChanged(false); });
-    connect(m_cwModeAction, &QAction::triggered, this, [this]() { handleModeChanged(true); });
+    connect(m_psk31ModeAction, &QAction::triggered, this,
+            [this]() { handleModeChanged(AudioEngine::OperatingMode::Bpsk31); });
+    connect(m_qpsk31ModeAction, &QAction::triggered, this,
+            [this]() { handleModeChanged(AudioEngine::OperatingMode::Qpsk31); });
+    connect(m_cwModeAction, &QAction::triggered, this,
+            [this]() { handleModeChanged(AudioEngine::OperatingMode::Cw); });
 
     m_activeModel = new DecoderTableModel(DecoderTableModel::Mode::ActiveDecoders, this);
     m_sweeperModel = new DecoderTableModel(DecoderTableModel::Mode::SweeperCandidates, this);
@@ -528,21 +540,40 @@ void MainWindow::handleSweeperClick(const QModelIndex &index)
     m_activeModel->addOrUpdate(line);
 }
 
-void MainWindow::handleModeChanged(bool cwSelected)
+void MainWindow::handleModeChanged(AudioEngine::OperatingMode mode)
 {
     if (!m_audioEngine) {
         return;
     }
-    m_audioEngine->setMode(cwSelected ? AudioEngine::OperatingMode::Cw : AudioEngine::OperatingMode::Bpsk31);
-    if (m_modeStatusLabel) {
-        // CW's occupied bandwidth is a function of keying speed, not a
-        // fixed figure the way PSK31's is (a spec-defined ~60Hz for its
-        // raised-cosine-shaped symbol rate) - "narrow" is honest without
-        // implying a specific measured number that doesn't exist yet.
-        m_modeStatusLabel->setText(cwSelected ? "BW: narrow (CW)   RX   TX/RX Locked"
-                                               : "BW: 60 Hz   RX   TX/RX Locked");
+    m_audioEngine->setMode(mode);
+
+    // CW's occupied bandwidth is a function of keying speed, not a fixed
+    // figure the way PSK31's is (a spec-defined ~60Hz for its raised-
+    // cosine-shaped symbol rate) - "narrow" is honest without implying a
+    // specific measured number that doesn't exist yet. QPSK31 occupies
+    // the same ~60Hz as BPSK31 (same symbol rate and pulse shaping, just
+    // a second orthogonal channel within it).
+    QString bwText;
+    QString modeText;
+    switch (mode) {
+    case AudioEngine::OperatingMode::Cw:
+        bwText = "BW: narrow (CW)";
+        modeText = "CW";
+        break;
+    case AudioEngine::OperatingMode::Qpsk31:
+        bwText = "BW: 60 Hz";
+        modeText = "QPSK31";
+        break;
+    case AudioEngine::OperatingMode::Bpsk31:
+    default:
+        bwText = "BW: 60 Hz";
+        modeText = "PSK31";
+        break;
     }
-    statusBar()->showMessage(cwSelected ? "Mode: CW" : "Mode: PSK31", 3000);
+    if (m_modeStatusLabel) {
+        m_modeStatusLabel->setText(bwText + "   RX   TX/RX Locked");
+    }
+    statusBar()->showMessage("Mode: " + modeText, 3000);
 }
 
 void MainWindow::handleAfcTargetChanged(double audioHz)

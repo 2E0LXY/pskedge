@@ -47,7 +47,7 @@ private slots:
     void handleSweeperClick(const QModelIndex &index);
     void handleWaterfallClick(double audioHz);
     void handleAfcTargetChanged(double audioHz);
-    void handleModeChanged(bool cwSelected);
+    void handleModeChanged(AudioEngine::OperatingMode mode);
     void handleRemoteMacro(const QString &text);
     void handleRemoteTxText(const QString &text);
     void broadcastRemoteState();
@@ -96,6 +96,7 @@ private:
     LevelMeter *m_txLevelMeter = nullptr;
     QPushButton *m_afcButton = nullptr;
     QAction *m_psk31ModeAction = nullptr;
+    QAction *m_qpsk31ModeAction = nullptr;
     QAction *m_cwModeAction = nullptr;
     QLabel *m_modeStatusLabel = nullptr;
     RemoteControlServer *m_remoteServer = nullptr;

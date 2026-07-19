@@ -3,6 +3,7 @@
 #include "dsp/Bpsk31Codec.h"
 #include "dsp/Bpsk31StreamDecoder.h"
 #include "dsp/CwCodec.h"
+#include "dsp/Qpsk31Codec.h"
 
 #include <memory>
 
@@ -30,7 +31,7 @@ public:
     // referenced was a roadmap placeholder that never actually decoded
     // (see FEATURE_ROADMAP.md history), removed per explicit request
     // rather than left implying capability that didn't exist.
-    enum class OperatingMode { Bpsk31, Cw };
+    enum class OperatingMode { Bpsk31, Qpsk31, Cw };
 
     explicit AudioEngine(QObject *parent = nullptr);
     ~AudioEngine() override;
