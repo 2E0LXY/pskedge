@@ -31,6 +31,19 @@ namespace psk::dsp {
 // Bpsk31TrackState) forward across calls via Bpsk31Codec::trackStreaming(),
 // so it can keep decoding new audio without ever needing to see another
 // preamble.
+//
+// Also implements loop-gain "gear-shifting", standard PLL practice not
+// previously done here: acquisition (finding lock at all, across the
+// +/-7Hz-per-hypothesis pull-in range) needs wide loop bandwidth for fast
+// pull-in, but once locked, that same wide bandwidth lets more noise
+// through per symbol decision than necessary - a narrower loop once
+// locked reduces noise bandwidth (better steady-state BER on a weak
+// signal) at the cost of being slower to react, which matters less once
+// there's an existing lock to track from rather than starting cold. Two
+// separate Bpsk31Codec instances (same carrier/sample-rate config, only
+// the loop gains differ) rather than a single one whose gains change
+// mid-flight - simpler and avoids any risk of a gain change perturbing
+// Bpsk31TrackState's in-flight integrators.
 class Bpsk31StreamDecoder {
 public:
     explicit Bpsk31StreamDecoder(Bpsk31Config config = {});
@@ -65,7 +78,14 @@ private:
     // and switches to streaming mode.
     void tryAcquire();
 
-    Bpsk31Codec m_codec;
+    // Wide loop gains (Bpsk31Config's own defaults, validated envelope
+    // documented in Bpsk31Codec.cpp) - used for tryAcquire()'s batch
+    // search and the one-time re-track of the buffer at the moment of
+    // acquisition.
+    Bpsk31Codec m_acquisitionCodec;
+    // Narrower loop gains, used for every trackStreaming() call after
+    // the initial lock - see the class comment for why.
+    Bpsk31Codec m_trackingCodec;
     std::vector<double> m_buffer;
     Bpsk31TrackState m_state;
     bool m_acquired = false;

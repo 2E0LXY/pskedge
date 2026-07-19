@@ -470,6 +470,58 @@ bool checkStreamDecoderContinuousReception(std::string *error)
     return true;
 }
 
+bool checkStreamDecoderGearShiftingNoiseTolerance(std::string *error)
+{
+    // Regression test for a measured improvement, not just a smoke test:
+    // Bpsk31StreamDecoder uses narrower Costas/Gardner loop gains for
+    // steady-state tracking after lock than for initial acquisition (see
+    // the class comment - standard PLL "gear-shifting" practice). Verified
+    // by A/B testing against a single-wide-gain version at the time this
+    // was added: the narrowed-gain version held up through noiseStd=1.2
+    // on this message where the single-gain version had already started
+    // failing at noiseStd=1.1. This checks that specific, previously
+    // measured boundary rather than just "some noise tolerance exists" -
+    // if a future change to the loop gains regresses steady-state
+    // tracking specifically (as opposed to acquisition, which the other
+    // noise-related tests already cover), this is what would catch it.
+    const std::string message =
+        "CQ CQ CQ DE 2E0LXY 2E0LXY 2E0LXY K THIS IS A WEAK SIGNAL TEST "
+        "THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG SEVERAL TIMES TO MAKE THIS "
+        "LONG ENOUGH TO EXERCISE STEADY STATE TRACKING NOT JUST ACQUISITION 73";
+
+    psk::dsp::Bpsk31Config txConfig;
+    const psk::dsp::Bpsk31Codec txCodec(txConfig);
+    const std::vector<double> samples = txCodec.modulateText(message);
+
+    std::mt19937 rng(1200);
+    std::normal_distribution<double> noise(0.0, 1.2);
+    std::vector<double> noisy = samples;
+    for (double &s : noisy) {
+        s += noise(rng);
+    }
+
+    psk::dsp::Bpsk31Config rxConfig;
+    psk::dsp::Bpsk31StreamDecoder decoder(rxConfig);
+    const auto chunkSamples = static_cast<std::size_t>(0.75 * rxConfig.sampleRate);
+    std::string finalText;
+    for (std::size_t start = 0; start < noisy.size(); start += chunkSamples) {
+        const std::size_t end = std::min(noisy.size(), start + chunkSamples);
+        const std::vector<double> chunk(noisy.begin() + static_cast<std::ptrdiff_t>(start),
+                                         noisy.begin() + static_cast<std::ptrdiff_t>(end));
+        finalText = decoder.pushSamples(chunk);
+    }
+
+    if (finalText.find(message) == std::string::npos) {
+        if (error) {
+            *error = "Bpsk31StreamDecoder gear-shifting regression: failed to decode a "
+                "message at noiseStd=1.2 that was verified to pass when gear-shifting was "
+                "added (decoded: \"" + finalText + "\")";
+        }
+        return false;
+    }
+    return true;
+}
+
 bool checkCwCodecRoundTrip(std::string *error)
 {
     const std::string message = "CQ CQ DE 2E0LXY 2E0LXY K THE QUICK BROWN FOX 73";
@@ -600,6 +652,11 @@ int main()
     if (!checkStreamDecoderContinuousReception(&error)) {
         std::cerr << "Bpsk31StreamDecoder check failed: " << error << '\n';
         return 12;
+    }
+
+    if (!checkStreamDecoderGearShiftingNoiseTolerance(&error)) {
+        std::cerr << "Bpsk31StreamDecoder gear-shifting check failed: " << error << '\n';
+        return 14;
     }
 
     if (!checkCwCodecRoundTrip(&error)) {
