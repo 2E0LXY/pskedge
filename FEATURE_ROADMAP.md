@@ -99,3 +99,46 @@ covers the 18 modes actually in the trimmed list above:
   comparatively small (a documented HTTP/UDP protocol) but depends on
   decode confidence/callsign extraction being reliable enough not to spam
   false spots.
+
+## Real-world BPSK31 reception status
+
+Tested against real recordings, not just synthetic signals - three
+provided during development (a Wikipedia reference sample, a BARTG
+sample, a photobyte.org sample; see git history for the specific
+commits and URLs). Two real, separate bugs were found and fixed this
+way, neither of which any synthetic test had caught:
+
+1. **Matched filter pulse-shape mismatch** (fixed) - the correlator
+   window reached a full symbol period into each neighbouring symbol,
+   which was harmless for this codec's own raised-cosine-shaped
+   signal but caused complete decode failure on any signal shaped
+   differently (confirmed with a clean, noise-free rectangular-pulse
+   test, not just the real recordings). See the `halfSpan` comment in
+   `Bpsk31Codec::trackWithOffset()`.
+2. **No continuity across calls** (fixed) - the demodulator re-ran its
+   full acquisition search from scratch on every call, requiring a
+   fresh preamble every time. A real transmission only sends its
+   preamble once, so decoding fell apart as soon as it scrolled out of
+   whatever window was being processed, regardless of signal quality.
+   See `Bpsk31StreamDecoder`.
+
+After both fixes, one of the three real recordings (photobyte.org's,
+a repeating test message) decodes completely and continuously with
+zero corruption. The other two still do not decode cleanly:
+
+- The Wikipedia sample fails across the entire audio passband even at
+  its exact measured carrier frequency and symbol rate, with the
+  cause not yet identified - ruled out so far: carrier frequency,
+  symbol rate, Vorbis compression (a known-good signal survives the
+  same compression round-trip perfectly), matched-filter pulse shape,
+  and low SNR (this file measures ~30dB, not marginal).
+- The BARTG sample shows recognisable but incomplete fragments ("RST
+  599", "Dipole" recur consistently rather than being pure noise) and
+  a measured carrier frequency that drifts by ~18Hz across the
+  recording's duration - a different impairment (continuous
+  in-message drift) from the static offset the Costas loop is
+  validated against, not yet addressed.
+
+Neither is claimed fixed. Both are open, with the specific diagnostic
+evidence recorded here rather than left as a vague "sometimes doesn't
+work".
