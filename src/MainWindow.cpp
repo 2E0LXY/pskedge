@@ -53,7 +53,7 @@ MainWindow::MainWindow(QWidget *parent)
 {
     loadSettings();
 
-    setWindowTitle("PSKedge v0.5.11 beta");
+    setWindowTitle("PSKedge v0.5.12 beta");
     resize(1480, 900);
 
     auto *settingsAction = new QAction("Setup", this);
@@ -144,6 +144,11 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_remoteServer, &RemoteControlServer::stateRequested, this, &MainWindow::broadcastRemoteState);
     if (m_config.remote.enabled && !m_config.remote.authToken.isEmpty()) {
         m_remoteServer->start(static_cast<quint16>(m_config.remote.port), m_config.remote.authToken);
+    } else if (m_config.remote.enabled) {
+        handleAudioStatus("Remote control: enabled but no auth token set - open Settings > "
+                           "Remote and set one, or the Android app cannot connect");
+    } else {
+        handleAudioStatus("Remote control: disabled - enable in Settings > Remote for the Android app");
     }
     m_remoteStateTimer.setInterval(1000);
     connect(&m_remoteStateTimer, &QTimer::timeout, this, &MainWindow::broadcastRemoteState);
@@ -625,6 +630,9 @@ void MainWindow::openSettings()
             m_remoteServer->stop();
             if (m_config.remote.enabled && !m_config.remote.authToken.isEmpty()) {
                 m_remoteServer->start(static_cast<quint16>(m_config.remote.port), m_config.remote.authToken);
+            } else if (m_config.remote.enabled) {
+                handleAudioStatus("Remote control: enabled but no auth token set - the Android "
+                                   "app cannot connect until one is set");
             }
         }
     }

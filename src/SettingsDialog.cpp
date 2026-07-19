@@ -5,6 +5,7 @@
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QMediaDevices>
+#include <QNetworkInterface>
 #include <QTabWidget>
 #include <QVBoxLayout>
 
@@ -229,6 +230,29 @@ SettingsDialog::SettingsDialog(const AppConfig &config, QWidget *parent)
     remoteForm->addRow("Port", m_remotePort);
     remoteForm->addRow("Auth token", m_remoteToken);
     remoteForm->addRow(remoteWarning);
+    // This machine's LAN address(es) - genuinely useful, not
+    // decorative: previously nothing in the app told the operator what
+    // IP to type into the Android app's Connect screen, which they
+    // otherwise have to find via ipconfig/ifconfig outside the app
+    // entirely. Loopback and link-local (169.254.x.x, no real DHCP/LAN
+    // assignment) addresses are filtered out since neither is reachable
+    // from a phone on the same network.
+    QStringList lanAddresses;
+    for (const QHostAddress &addr : QNetworkInterface::allAddresses()) {
+        if (addr.protocol() != QAbstractSocket::IPv4Protocol) {
+            continue;
+        }
+        if (addr.isLoopback() || addr.isLinkLocal()) {
+            continue;
+        }
+        lanAddresses << addr.toString();
+    }
+    const QString lanAddressText = lanAddresses.isEmpty()
+        ? "No LAN address found - check this machine is connected to a network"
+        : lanAddresses.join(", ");
+    auto *lanAddressLabel = new QLabel(lanAddressText, this);
+    lanAddressLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    remoteForm->addRow("This PC's LAN address", lanAddressLabel);
     tabs->addTab(remotePage, "Remote");
 
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);

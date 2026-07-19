@@ -12,7 +12,7 @@ cmake_minimum_required(VERSION 3.21)
 # as a repair of the same already-installed 0.2.0 product, not an
 # upgrade. Bump this for every release that should actually replace
 # installed files, not just the git tag.
-project(PSKedge VERSION 0.5.11 LANGUAGES CXX)
+project(PSKedge VERSION 0.5.12 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -43,6 +43,8 @@ add_library(psk-core
     src/dsp/ft8/Ldpc174_91.cpp
     src/dsp/ft8/Ldpc174_91.h
     src/dsp/ft8/Ldpc174_91_data.h
+    src/dsp/ft8/SourceEncoding.cpp
+    src/dsp/ft8/SourceEncoding.h
     src/dsp/Qpsk31Codec.cpp
     src/dsp/Qpsk31Codec.h
     src/dsp/SimpleFFT.cpp
