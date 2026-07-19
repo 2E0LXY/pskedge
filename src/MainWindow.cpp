@@ -53,7 +53,7 @@ MainWindow::MainWindow(QWidget *parent)
 {
     loadSettings();
 
-    setWindowTitle("PSKedge v0.5.15 beta");
+    setWindowTitle("PSKedge v0.5.16 beta");
     resize(1480, 900);
 
     auto *settingsAction = new QAction("Setup", this);
@@ -551,6 +551,18 @@ void MainWindow::handleModeChanged(AudioEngine::OperatingMode mode)
         return;
     }
     m_audioEngine->setMode(mode);
+    // AudioEngine's own decode buffer resets on setMode() (see
+    // setMode()'s own comment), but its rxTextDecoded signal only fires
+    // when the newly decoded text differs from last time - an empty-to-
+    // empty transition right after a mode switch never fires, so without
+    // this, m_liveRxLine.text/state would keep showing whatever was
+    // decoded in the PREVIOUS mode until real new content eventually
+    // arrived in the new one. Same class of bug as handleWaterfallClick's
+    // stale-text fix, different trigger (mode switch vs manual re-tune).
+    m_liveRxLine.state = "Searching";
+    m_liveRxLine.text.clear();
+    m_liveRxLine.callsign.clear();
+    refreshDecodedLines();
 
     // CW's occupied bandwidth is a function of keying speed, not a fixed
     // figure the way PSK31's is (a spec-defined ~60Hz for its raised-
@@ -606,8 +618,17 @@ void MainWindow::handleWaterfallClick(double audioHz)
     m_liveRxLine.metrics.audioFrequencyHz = audioHz;
     m_liveRxLine.metrics.rfFrequencyMhz = m_selectedLine.metrics.rfFrequencyMhz;
     m_liveRxLine.state = "Searching";
+    // Clear stale decoded text from whatever was previously locked at
+    // the old frequency - without this, displayText() would show
+    // "Searching" (implying nothing decoded yet) directly next to
+    // leftover garbled text from before the re-tune, which is exactly
+    // what was reported: a "Searching" label with old decode noise
+    // still shown alongside it.
+    m_liveRxLine.text.clear();
+    m_liveRxLine.callsign.clear();
     m_audioEngine->setRxTargetHz(audioHz);
     updateTxSafety();
+    refreshDecodedLines();
     statusBar()->showMessage(QString("RX tracking audio frequency %1 Hz").arg(audioHz, 0, 'f', 0), 3000);
 }
 
